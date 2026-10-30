@@ -169,7 +169,7 @@ const NOME_EU = 'Leonardo';
 
 // Versão do app. Melhorias pequenas: 1.2, 1.3... Mudanças grandes: 2.0, 3.0...
 // Histórico completo em CHANGELOG.md.
-const VERSAO_APP = '1.9';
+const VERSAO_APP = '1.10';
 
 return { GOOGLE_CLIENT_ID, NOME_PASTA_DRIVE, ESCOPO_DRIVE, NOME_EU, VERSAO_APP };
 })();
@@ -2680,11 +2680,21 @@ const telas = {
   config: telaConfig,
 };
 
+/** Move a barra de menus de forma que a aba atual fique visível e centralizada (sem mexer na rolagem da página). */
+function acompanharMenu(nome) {
+  const barra = document.querySelector('.navegacao');
+  const botao = barra?.querySelector(`[data-tela="${nome}"]`);
+  if (!barra || !botao) return;
+  const alvo = botao.offsetLeft - barra.clientWidth / 2 + botao.offsetWidth / 2;
+  barra.scrollTo({ left: Math.max(0, alvo), behavior: 'smooth' });
+}
+
 function irPara(nome) {
   estado.telaAtual = nome;
   botoes.forEach((b) => b.classList.toggle('ativa', b.dataset.tela === nome));
   telas[nome]();
   window.scrollTo(0, 0);
+  acompanharMenu(nome);
 }
 
 botoes.forEach((b) => b.addEventListener('click', () => irPara(b.dataset.tela)));
