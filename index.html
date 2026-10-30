@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#a8d8ea">
+  <title>Compras da Casa</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="cabecalho-fixo">
+  <header class="topo">
+    <h1>Compras da Casa</h1>
+    <span id="status" class="status" aria-live="polite">Salvo neste celular</span>
+  </header>
+    <nav class="navegacao" aria-label="Navegação principal">
+    <button data-tela="inicio">Início</button>
+    <button data-tela="preparar">Preparar</button>
+    <button data-tela="compra">Compra</button>
+    <button data-tela="historico">Histórico</button>
+    <button data-tela="produtos">Produtos</button>
+    <button data-tela="relatorios">Relatórios</button>
+    <button data-tela="config">Config</button>
+  </nav>
+  </div>
+
+  <main id="tela"></main>
+
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+:root {
+  --azul: #a8d8ea;
+  --azul-escuro: #3d7e99;
+  --rosa: #f7c5d4;
+  --branco: #ffffff;
+  --cinza: #f5f6f7;
+  --texto: #2b2b2b;
+  --borda: #e3e6e9;
+  --raio: 14px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--cinza);
+  color: var(--texto);
+}
+
+.topo {
+  background: var(--azul);
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.cabecalho-fixo {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--azul);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.topo h1 { font-size: 1.15rem; margin: 0; }
+.status { font-size: 0.8rem; color: var(--azul-escuro); }
+.status.erro { color: #a02848; }
+
+main { padding: 14px; max-width: 640px; margin: 0 auto; }
+
+h2 { font-size: 1.05rem; margin: 18px 0 8px; }
+
+.cartao {
+  background: var(--branco);
+  border-radius: var(--raio);
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+button, .botao {
+  font: inherit;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 16px;
+  background: var(--azul);
+  color: var(--texto);
+  cursor: pointer;
+  min-height: 44px;
+}
+button.destaque { background: var(--rosa); font-weight: 600; }
+button.secundario { background: var(--borda); }
+button:disabled { opacity: 0.5; }
+
+input, select, textarea {
+  font: inherit;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  background: var(--branco);
+  min-height: 44px;
+}
+
+label { display: block; font-size: 0.9rem; margin: 10px 0 4px; }
+
+.linha { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.linha > * { flex: 1 1 auto; }
+
+.item-produto {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--borda);
+}
+.item-produto:last-child { border-bottom: none; }
+.item-produto input[type="checkbox"] { width: 22px; height: 22px; flex: 0 0 auto; }
+.item-produto .nome { flex: 1; }
+.item-produto input[type="number"] { width: 84px; flex: 0 0 auto; }
+
+.aviso {
+  background: #fff4e0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+.vazio { color: #777; font-size: 0.95rem; padding: 12px 0; }
+
+.barra {
+  height: 10px;
+  background: var(--borda);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.barra > div { height: 100%; background: var(--azul-escuro); border-radius: 6px; }
+
+.navegacao {
+  display: flex;
+  overflow-x: auto;
+  background: var(--branco);
+  padding: 6px;
+  gap: 4px;
+}
+.navegacao button {
+  flex: 0 0 auto;
+  background: transparent;
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  min-height: 40px;
+}
+.navegacao button.ativa { background: var(--rosa); font-weight: 600; }
