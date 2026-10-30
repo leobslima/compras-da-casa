@@ -137,7 +137,7 @@ label { display: block; font-size: 0.9rem; margin: 10px 0 4px; }
 <body>
   <div class="cabecalho-fixo">
   <header class="topo">
-    <h1>Compras da Casa</h1>
+    <h1>Compras da Casa <small id="versao-app" style="font-weight:normal;font-size:.75rem;color:var(--azul-escuro)"></small></h1>
     <span id="status" class="status" aria-live="polite">Salvo neste celular</span>
   </header>
     <nav class="navegacao" aria-label="Navegação principal">
@@ -169,7 +169,7 @@ const NOME_EU = 'Leonardo';
 
 // Versão do app. Melhorias pequenas: 1.2, 1.3... Mudanças grandes: 2.0, 3.0...
 // Histórico completo em CHANGELOG.md.
-const VERSAO_APP = '1.6';
+const VERSAO_APP = '1.7';
 
 return { GOOGLE_CLIENT_ID, NOME_PASTA_DRIVE, ESCOPO_DRIVE, NOME_EU, VERSAO_APP };
 })();
@@ -1797,6 +1797,18 @@ function telaEmAndamento() {
       telaEmAndamento();
     });
 
+    // Máscara de centavos: digitando 1050 aparece 10,50 (os dois últimos dígitos são centavos).
+    cartao.querySelector('[data-campo="preco"]').addEventListener('input', (e) => {
+      const digitos = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 9);
+      if (digitos === '') {
+        e.target.value = '';
+        return;
+      }
+      const reais = Math.floor(Number(digitos) / 100);
+      const centavos = String(Number(digitos) % 100).padStart(2, '0');
+      e.target.value = `${reais},${centavos}`;
+    });
+
     cartao.querySelector('[data-campo="preco"]').addEventListener('change', async (e) => {
       const texto = e.target.value.trim();
       if (texto === '') {
@@ -2634,6 +2646,8 @@ document.addEventListener('touchend', (e) => {
 
 async function iniciar() {
   try {
+    const rotuloVersao = document.getElementById('versao-app');
+    if (rotuloVersao) rotuloVersao.textContent = `v${VERSAO_APP}`;
     await carregarDados();
     await garantirCadastroInicial();
     mostrarStatus('Salvo neste celular');
