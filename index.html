@@ -5,8 +5,134 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#a8d8ea">
   <title>Compras da Casa</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css">
+  
+  <style>
+:root {
+  --azul: #a8d8ea;
+  --azul-escuro: #3d7e99;
+  --rosa: #f7c5d4;
+  --branco: #ffffff;
+  --cinza: #f5f6f7;
+  --texto: #2b2b2b;
+  --borda: #e3e6e9;
+  --raio: 14px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--cinza);
+  color: var(--texto);
+}
+
+.topo {
+  background: var(--azul);
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.cabecalho-fixo {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--azul);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.topo h1 { font-size: 1.15rem; margin: 0; }
+.status { font-size: 0.8rem; color: var(--azul-escuro); }
+.status.erro { color: #a02848; }
+
+main { padding: 14px; max-width: 640px; margin: 0 auto; }
+
+h2 { font-size: 1.05rem; margin: 18px 0 8px; }
+
+.cartao {
+  background: var(--branco);
+  border-radius: var(--raio);
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+button, .botao {
+  font: inherit;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 16px;
+  background: var(--azul);
+  color: var(--texto);
+  cursor: pointer;
+  min-height: 44px;
+}
+button.destaque { background: var(--rosa); font-weight: 600; }
+button.secundario { background: var(--borda); }
+button:disabled { opacity: 0.5; }
+
+input, select, textarea {
+  font: inherit;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  background: var(--branco);
+  min-height: 44px;
+}
+
+label { display: block; font-size: 0.9rem; margin: 10px 0 4px; }
+
+.linha { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.linha > * { flex: 1 1 auto; }
+
+.item-produto {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--borda);
+}
+.item-produto:last-child { border-bottom: none; }
+.item-produto input[type="checkbox"] { width: 22px; height: 22px; flex: 0 0 auto; }
+.item-produto .nome { flex: 1; }
+.item-produto input[type="number"] { width: 84px; flex: 0 0 auto; }
+
+.aviso {
+  background: #fff4e0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+.vazio { color: #777; font-size: 0.95rem; padding: 12px 0; }
+
+.barra {
+  height: 10px;
+  background: var(--borda);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.barra > div { height: 100%; background: var(--azul-escuro); border-radius: 6px; }
+
+.navegacao {
+  display: flex;
+  overflow-x: auto;
+  background: var(--branco);
+  padding: 6px;
+  gap: 4px;
+}
+.navegacao button {
+  flex: 0 0 auto;
+  background: transparent;
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  min-height: 40px;
+}
+.navegacao button.ativa { background: var(--rosa); font-weight: 600; }
+
+</style>
 </head>
 <body>
   <div class="cabecalho-fixo">
@@ -28,6 +154,2505 @@
   <main id="tela"></main>
 
 
-  <script type="module" src="src/app.js"></script>
+  <script>
+const M_config = (() => {
+// Configurações do app que dependem de você.
+// GOOGLE_CLIENT_ID: ID do cliente OAuth criado no Google Cloud (passo a passo no README).
+// Enquanto estiver vazio, a sincronização com o Google Drive fica desativada e o app avisa.
+const GOOGLE_CLIENT_ID = '';
+
+const NOME_PASTA_DRIVE = 'Compras da Casa';
+const ESCOPO_DRIVE = 'https://www.googleapis.com/auth/drive.file';
+
+// Nome exibido para a pessoa "eu" (o outro é sempre Viviane).
+const NOME_EU = 'Leonardo';
+
+// Versão do app. Melhorias pequenas: 1.2, 1.3... Mudanças grandes: 2.0, 3.0...
+// Histórico completo em CHANGELOG.md.
+const VERSAO_APP = '1.5';
+
+return { GOOGLE_CLIENT_ID, NOME_PASTA_DRIVE, ESCOPO_DRIVE, NOME_EU, VERSAO_APP };
+})();
+
+const M_logica = (() => {
+// Regras de negócio puras (sem acesso ao navegador), para poderem ser testadas no computador.
+
+const NOME_MAX = 80;
+
+/** Remove espaços extras e padroniza o nome para comparação de duplicidade. */
+function normalizarNome(nome) {
+  return String(nome ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/** Valida o cadastro de um produto. Retorna { ok, erros }. */
+function validarProduto(dados) {
+  const erros = [];
+  const nome = String(dados?.nome ?? '').replace(/\s+/g, ' ').trim();
+  if (!nome) erros.push('Informe o nome do produto.');
+  if (nome.length > NOME_MAX) erros.push(`O nome deve ter no máximo ${NOME_MAX} caracteres.`);
+  if (!dados?.categoriaId) erros.push('Escolha uma categoria.');
+  return { ok: erros.length === 0, erros, nome };
+}
+
+/**
+ * Procura produtos com nome igual ou muito parecido (para alertar sobre duplicidade).
+ * Considera igual quando, após normalização, os nomes são iguais ou um contém o outro.
+ * Ignora o próprio produto ao editar (idIgnorado).
+ */
+function encontrarSimilares(nomeNovo, produtos, idIgnorado = null) {
+  const alvo = normalizarNome(nomeNovo);
+  if (!alvo) return [];
+  return produtos.filter((p) => {
+    if (p.id === idIgnorado) return false;
+    const existente = normalizarNome(p.nome);
+    return existente === alvo || existente.includes(alvo) || alvo.includes(existente);
+  });
+}
+
+/** Total de um item = quantidade de itens × preço unitário. Arredonda para centavos. */
+function totalItem(quantidade, precoUnitario) {
+  return Math.round(quantidade * precoUnitario * 100) / 100;
+}
+
+/** Valida quantidade (inteiro ≥ 1) e preço unitário (número ≥ 0). */
+function validarItem({ quantidade, precoUnitario }) {
+  const erros = [];
+  if (!Number.isInteger(quantidade) || quantidade < 1) erros.push('A quantidade deve ser um número inteiro de pelo menos 1.');
+  if (typeof precoUnitario !== 'number' || !Number.isFinite(precoUnitario) || precoUnitario < 0) {
+    erros.push('O preço unitário deve ser um valor igual ou maior que zero.');
+  }
+  return { ok: erros.length === 0, erros };
+}
+
+/** Formata valor monetário no padrão R$ 0,00. */
+function formatarMoeda(valor) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor ?? 0);
+}
+
+/** Formata data ISO para DD/MM/AAAA. */
+function formatarData(iso) {
+  if (!iso) return '';
+  const [ano, mes, dia] = String(iso).slice(0, 10).split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
+/** Agrupa produtos ativos por categoria, na ordem das categorias. */
+function agruparPorCategoria(categorias, produtos) {
+  return categorias
+    .map((cat) => ({
+      categoria: cat,
+      produtos: produtos
+        .filter((p) => p.categoriaId === cat.id && p.ativo)
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+    }))
+    .filter((grupo) => grupo.produtos.length > 0);
+}
+
+return { NOME_MAX, normalizarNome, validarProduto, encontrarSimilares, totalItem, validarItem, formatarMoeda, formatarData, agruparPorCategoria };
+})();
+
+const M_compra = (() => {
+// Regras da compra em andamento e do histórico de preços. Funções puras, testáveis no computador.
+
+const { totalItem } = M_logica;
+
+const STATUS_ITEM = {
+  PENDENTE: 'pendente',
+  COMPRADO: 'comprado',
+  NAO_ENCONTRADO: 'nao_encontrado',
+  NAO_COMPRADO: 'nao_comprado',
+};
+
+/** Converte texto digitado (aceita vírgula ou ponto) em número. Retorna null se vazio ou inválido. */
+function lerDecimal(texto) {
+  const limpo = String(texto ?? '').trim().replace(',', '.');
+  if (limpo === '') return null;
+  const n = Number(limpo);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Subtotal de um item: só entra no total se o item foi efetivamente comprado. */
+function subtotalItem(item) {
+  if (item.status !== STATUS_ITEM.COMPRADO) return 0;
+  return totalItem(item.quantidade, item.precoUnitario);
+}
+
+/** Total da compra = soma dos subtotais dos itens comprados. */
+function totalCompra(itens) {
+  return Math.round(itens.reduce((soma, item) => soma + subtotalItem(item), 0) * 100) / 100;
+}
+
+/**
+ * Último preço realmente pago por um produto, a partir das compras finalizadas.
+ * Retorna null se o produto nunca foi comprado (nunca inventa um preço).
+ */
+function ultimoPrecoPago(produtoId, compras) {
+  let melhor = null;
+  for (const compra of compras) {
+    if (compra.status !== 'finalizada') continue;
+    for (const item of compra.itens) {
+      if (item.produtoId !== produtoId || item.status !== STATUS_ITEM.COMPRADO) continue;
+      if (!melhor || compra.finalizadaEm > melhor.data) {
+        melhor = {
+          precoUnitario: item.precoUnitario,
+          quantidade: item.quantidade,
+          data: compra.finalizadaEm,
+          estabelecimento: compra.estabelecimento || '',
+        };
+      }
+    }
+  }
+  return melhor;
+}
+
+/**
+ * Variação percentual = ((atual - anterior) / anterior) × 100.
+ * Retorna null se o preço anterior for zero ou inexistente (evita um percentual enganoso).
+ */
+function variacaoPercentual(anterior, atual) {
+  if (typeof anterior !== 'number' || !(anterior > 0)) return null;
+  return Math.round(((atual - anterior) / anterior) * 10000) / 100;
+}
+
+/** Verifica se a compra pode ser finalizada. Não permite finalizar com dados inválidos ou sem nada comprado. */
+function validarParaFinalizar(compra) {
+  const erros = [];
+  const comprados = compra.itens.filter((i) => i.status === STATUS_ITEM.COMPRADO);
+  if (comprados.length === 0) erros.push('Marque pelo menos um item como comprado antes de finalizar.');
+  for (const item of comprados) {
+    if (!Number.isInteger(item.quantidade) || item.quantidade < 1) {
+      erros.push(`Quantidade inválida em "${item.nomeProduto}".`);
+    }
+    if (typeof item.precoUnitario !== 'number' || !Number.isFinite(item.precoUnitario) || item.precoUnitario < 0) {
+      erros.push(`Preço inválido em "${item.nomeProduto}".`);
+    }
+  }
+  return { ok: erros.length === 0, erros };
+}
+
+/** Resumo mostrado antes da confirmação final. */
+function resumoCompra(compra) {
+  const planejados = compra.itens.filter((i) => i.planejada != null).length;
+  const comprados = compra.itens.filter((i) => i.status === STATUS_ITEM.COMPRADO).length;
+  const naoComprados = compra.itens.filter(
+    (i) => i.status === STATUS_ITEM.NAO_ENCONTRADO || i.status === STATUS_ITEM.NAO_COMPRADO,
+  );
+  return {
+    planejados,
+    comprados,
+    naoComprados: naoComprados.map((i) => i.nomeProduto),
+    total: totalCompra(compra.itens),
+  };
+}
+
+return { STATUS_ITEM, lerDecimal, subtotalItem, totalCompra, ultimoPrecoPago, variacaoPercentual, validarParaFinalizar, resumoCompra };
+})();
+
+const M_historico = (() => {
+// Consultas sobre as compras finalizadas: filtros e histórico de preço por produto. Funções puras.
+
+const { STATUS_ITEM, subtotalItem, variacaoPercentual } = M_compra;
+
+/** Data local (AAAA-MM-DD) de um instante ISO, no fuso do celular. */
+function diaLocal(iso) {
+  const d = new Date(iso);
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+/** Lista apenas compras finalizadas, aplicando os filtros combináveis. Mais recentes primeiro. */
+function filtrarCompras(compras, filtros = {}) {
+  const { dataInicial, dataFinal, estabelecimento, responsavel, produtoId } = filtros;
+  return compras
+    .filter((c) => c.status === 'finalizada')
+    .filter((c) => {
+      const dia = diaLocal(c.finalizadaEm);
+      if (dataInicial && dia < dataInicial) return false;
+      if (dataFinal && dia > dataFinal) return false;
+      if (estabelecimento && (c.estabelecimento || '') !== estabelecimento) return false;
+      if (responsavel && c.responsavel !== responsavel) return false;
+      if (produtoId && !c.itens.some((i) => i.produtoId === produtoId && i.status === STATUS_ITEM.COMPRADO)) return false;
+      return true;
+    })
+    .sort((a, b) => b.finalizadaEm.localeCompare(a.finalizadaEm));
+}
+
+/**
+ * Todas as vezes em que um produto foi comprado, da mais antiga para a mais recente,
+ * com a variação em relação à compra anterior (null na primeira, ou se o anterior for zero).
+ */
+function historicoDoProduto(produtoId, compras) {
+  const registros = [];
+  for (const compra of compras) {
+    if (compra.status !== 'finalizada') continue;
+    for (const item of compra.itens) {
+      if (item.produtoId !== produtoId || item.status !== STATUS_ITEM.COMPRADO) continue;
+      registros.push({
+        compraId: compra.id,
+        data: compra.finalizadaEm,
+        estabelecimento: compra.estabelecimento || '',
+        responsavel: compra.responsavel,
+        quantidade: item.quantidade,
+        precoUnitario: item.precoUnitario,
+        subtotal: subtotalItem(item),
+      });
+    }
+  }
+  registros.sort((a, b) => a.data.localeCompare(b.data));
+  return registros.map((r, idx) => ({
+    ...r,
+    variacao: idx === 0 ? null : variacaoPercentual(registros[idx - 1].precoUnitario, r.precoUnitario),
+  }));
+}
+
+/** Estabelecimentos distintos registrados nas compras finalizadas, em ordem alfabética. */
+function estabelecimentosUsados(compras) {
+  const nomes = new Set(
+    compras.filter((c) => c.status === 'finalizada' && c.estabelecimento).map((c) => c.estabelecimento),
+  );
+  return [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+return { diaLocal, filtrarCompras, historicoDoProduto, estabelecimentosUsados };
+})();
+
+const M_relatorios = (() => {
+// Cálculos dos relatórios de gastos e de preços. Funções puras, testáveis no computador.
+
+const { STATUS_ITEM, subtotalItem, variacaoPercentual } = M_compra;
+const { diaLocal, historicoDoProduto } = M_historico;
+
+/** Soma de dias em uma data AAAA-MM-DD, sem depender do fuso do celular. */
+function somarDias(dataIso, dias) {
+  const [a, m, d] = dataIso.split('-').map(Number);
+  const dt = new Date(Date.UTC(a, m - 1, d + dias));
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Período anterior de mesmo tamanho. Ex.: 01/10 a 07/10 -> 24/09 a 30/09.
+ * Retorna null se o período não estiver completo.
+ */
+function periodoAnterior(dataInicial, dataFinal) {
+  if (!dataInicial || !dataFinal || dataInicial > dataFinal) return null;
+  const [a1, m1, d1] = dataInicial.split('-').map(Number);
+  const [a2, m2, d2] = dataFinal.split('-').map(Number);
+  const dias = Math.round((Date.UTC(a2, m2 - 1, d2) - Date.UTC(a1, m1 - 1, d1)) / 86400000) + 1;
+  return { dataInicial: somarDias(dataInicial, -dias), dataFinal: somarDias(dataInicial, -1) };
+}
+
+/** Atalhos de período: últimos N dias (incluindo hoje) ou mês atual, a partir de uma data de referência. */
+function periodoRapido(tipo, hojeIso) {
+  if (tipo === 'mes') {
+    const inicio = `${hojeIso.slice(0, 7)}-01`;
+    return { dataInicial: inicio, dataFinal: hojeIso };
+  }
+  const dias = Number(tipo);
+  return { dataInicial: somarDias(hojeIso, -(dias - 1)), dataFinal: hojeIso };
+}
+
+/**
+ * Transforma compras finalizadas em linhas de item comprado, com os filtros combinados.
+ * `produtos` serve para obter a categoria de cada item.
+ */
+function itensFiltrados(compras, produtos, filtros = {}) {
+  const { dataInicial, dataFinal, estabelecimento, responsavel, categoriaId, produtoId } = filtros;
+  const porId = new Map(produtos.map((p) => [p.id, p]));
+  const linhas = [];
+  for (const compra of compras) {
+    if (compra.status !== 'finalizada') continue;
+    const dia = diaLocal(compra.finalizadaEm);
+    if (dataInicial && dia < dataInicial) continue;
+    if (dataFinal && dia > dataFinal) continue;
+    if (estabelecimento && (compra.estabelecimento || '') !== estabelecimento) continue;
+    if (responsavel && compra.responsavel !== responsavel) continue;
+    for (const item of compra.itens) {
+      if (item.status !== STATUS_ITEM.COMPRADO) continue;
+      const produto = porId.get(item.produtoId);
+      if (produtoId && item.produtoId !== produtoId) continue;
+      if (categoriaId && produto?.categoriaId !== categoriaId) continue;
+      linhas.push({
+        compraId: compra.id,
+        dia,
+        estabelecimento: compra.estabelecimento || 'Sem estabelecimento',
+        produtoId: item.produtoId,
+        nome: produto?.nome ?? item.nomeProduto,
+        categoriaId: produto?.categoriaId ?? null,
+        quantidade: item.quantidade,
+        subtotal: subtotalItem(item),
+      });
+    }
+  }
+  return linhas;
+}
+
+/** Totais gerais: gasto, número de compras e média por compra. */
+function resumoGastos(linhas) {
+  const total = Math.round(linhas.reduce((s, l) => s + l.subtotal, 0) * 100) / 100;
+  const compras = new Set(linhas.map((l) => l.compraId)).size;
+  return {
+    total,
+    compras,
+    mediaPorCompra: compras === 0 ? 0 : Math.round((total / compras) * 100) / 100,
+  };
+}
+
+/** Agrupa linhas por uma chave, somando subtotais. Ordena do maior gasto para o menor. */
+function gastosPor(linhas, chave, rotulo) {
+  const grupos = new Map();
+  for (const l of linhas) {
+    const k = chave(l);
+    if (!grupos.has(k)) grupos.set(k, { chave: k, rotulo: rotulo(l), total: 0, quantidade: 0 });
+    const g = grupos.get(k);
+    g.total += l.subtotal;
+    g.quantidade += l.quantidade ?? 0;
+  }
+  const total_geral = linhas.reduce((s, l) => s + l.subtotal, 0);
+  return [...grupos.values()]
+    .map((g) => ({
+      ...g,
+      total: Math.round(g.total * 100) / 100,
+      participacao: total_geral > 0 ? Math.round((g.total / total_geral) * 10000) / 100 : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
+/** Ordena grupos por 'valor' (padrão), 'quantidade' ou 'nome'. Não altera a lista original. */
+function ordenarGrupos(grupos, criterio = 'valor') {
+  const copia = [...grupos];
+  if (criterio === 'quantidade') return copia.sort((a, b) => b.quantidade - a.quantidade);
+  if (criterio === 'nome') return copia.sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR'));
+  return copia.sort((a, b) => b.total - a.total);
+}
+
+/** Gastos somados por dia (AAAA-MM-DD), em ordem cronológica. Para o gráfico de evolução. */
+function gastosPorDia(linhas) {
+  const dias = new Map();
+  for (const l of linhas) dias.set(l.dia, (dias.get(l.dia) ?? 0) + l.subtotal);
+  return [...dias.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([dia, total]) => ({ dia, total: Math.round(total * 100) / 100 }));
+}
+
+/**
+ * Maiores aumentos e reduções de preço: compara o último preço com o anterior de cada produto,
+ * usando só as compras já filtradas. Produtos com menos de duas compras não entram.
+ */
+function maioresVariacoes(compras) {
+  const produtoIds = new Set();
+  for (const c of compras) {
+    if (c.status !== 'finalizada') continue;
+    for (const i of c.itens) if (i.status === STATUS_ITEM.COMPRADO) produtoIds.add(i.produtoId);
+  }
+  const variacoes = [];
+  for (const produtoId of produtoIds) {
+    const hist = historicoDoProduto(produtoId, compras);
+    if (hist.length < 2) continue;
+    const anterior = hist[hist.length - 2];
+    const atual = hist[hist.length - 1];
+    const variacao = variacaoPercentual(anterior.precoUnitario, atual.precoUnitario);
+    if (variacao === null) continue;
+    variacoes.push({
+      produtoId,
+      precoAnterior: anterior.precoUnitario,
+      precoAtual: atual.precoUnitario,
+      diferenca: Math.round((atual.precoUnitario - anterior.precoUnitario) * 100) / 100,
+      variacao,
+      dataAtual: atual.data,
+    });
+  }
+  const aumentos = variacoes.filter((v) => v.variacao > 0).sort((a, b) => b.variacao - a.variacao);
+  const reducoes = variacoes.filter((v) => v.variacao < 0).sort((a, b) => a.variacao - b.variacao);
+  return { aumentos, reducoes, estaveis: variacoes.filter((v) => v.variacao === 0).length };
+}
+
+return { periodoAnterior, periodoRapido, itensFiltrados, resumoGastos, gastosPor, ordenarGrupos, gastosPorDia, maioresVariacoes };
+})();
+
+const M_correcao = (() => {
+// Correção controlada de compras já finalizadas.
+// Nunca apaga o estado anterior: cada correção guarda, em "alteracoes", os campos alterados como estavam antes.
+
+const { totalCompra, validarParaFinalizar } = M_compra;
+
+const MOTIVO_MIN = 3;
+const CAMPOS_EDITAVEIS = ['itens', 'estabelecimento', 'responsavel'];
+
+/**
+ * Aplica uma correção. `mudancas` traz só os campos a alterar (itens, estabelecimento, responsavel).
+ * Retorna { ok, erros, compra } sem alterar o objeto original.
+ */
+function aplicarCorrecao(compra, mudancas, { motivo, autor, agoraIso }) {
+  const erros = [];
+  const texto = String(motivo ?? '').trim();
+  if (texto.length < MOTIVO_MIN) erros.push('Descreva o motivo da correção (pelo menos 3 caracteres).');
+  if (compra.status !== 'finalizada') erros.push('Só é possível corrigir compras finalizadas.');
+
+  const campos = Object.keys(mudancas ?? {}).filter((c) => CAMPOS_EDITAVEIS.includes(c));
+  if (campos.length === 0) erros.push('Nenhuma alteração foi informada.');
+
+  const novo = { ...compra };
+  for (const c of campos) novo[c] = mudancas[c];
+
+  if (campos.includes('itens')) {
+    erros.push(...validarParaFinalizar({ itens: novo.itens }).erros);
+  }
+  if (erros.length) return { ok: false, erros, compra };
+
+  const antes = {};
+  for (const c of campos) antes[c] = compra[c];
+  antes.total = compra.total ?? totalCompra(compra.itens);
+
+  novo.total = totalCompra(novo.itens);
+  novo.alteracoes = [...(compra.alteracoes ?? []), { em: agoraIso, autor, motivo: texto, campos, antes }];
+  return { ok: true, erros: [], compra: novo };
+}
+
+return { MOTIVO_MIN, aplicarCorrecao };
+})();
+
+const M_produtos = (() => {
+// Edição de produtos e categorias. O id nunca muda, então o histórico de compras continua ligado ao produto.
+
+const { validarProduto, encontrarSimilares, normalizarNome } = M_logica;
+
+/** Valida a edição de um produto e alerta sobre nome parecido com outro produto. */
+function validarEdicaoProduto(produtos, idEditado, { nome, categoriaId }) {
+  const base = validarProduto({ nome, categoriaId });
+  if (!base.ok) return { ok: false, erros: base.erros, similares: [] };
+  const similares = encontrarSimilares(base.nome, produtos, idEditado);
+  return { ok: true, erros: [], nome: base.nome, similares };
+}
+
+/** Valida o nome de uma categoria, sem repetir outra categoria. */
+function validarCategoria(categorias, { nome }, idIgnorado = null) {
+  const limpo = String(nome ?? '').replace(/\s+/g, ' ').trim();
+  if (!limpo) return { ok: false, erros: ['Informe o nome da categoria.'] };
+  if (limpo.length > 60) return { ok: false, erros: ['O nome da categoria deve ter no máximo 60 caracteres.'] };
+  const repetida = categorias.some((c) => c.id !== idIgnorado && normalizarNome(c.nome) === normalizarNome(limpo));
+  if (repetida) return { ok: false, erros: ['Já existe uma categoria com esse nome.'] };
+  return { ok: true, erros: [], nome: limpo };
+}
+
+return { validarEdicaoProduto, validarCategoria };
+})();
+
+const M_sincronizacao = (() => {
+// Mesclagem entre os dados deste celular e o arquivo do outro celular (vindo do Drive).
+// Regra: une por identificador; se o mesmo registro foi alterado nos dois lados, vence a alteração mais recente.
+
+const COLECOES_SYNC = ['categorias', 'produtos', 'listas', 'compras'];
+
+/**
+ * Mescla duas listas de registros com id. Retorna a lista resultante e os ids que estavam em conflito.
+ */
+function mesclarColecao(local, remota) {
+  const mapa = new Map();
+  const conflitos = [];
+  for (const reg of local) mapa.set(reg.id, reg);
+  for (const reg of remota) {
+    const atual = mapa.get(reg.id);
+    if (!atual) {
+      mapa.set(reg.id, reg);
+      continue;
+    }
+    const atualTs = atual.atualizadoEm ?? '';
+    const remotoTs = reg.atualizadoEm ?? '';
+    if (atualTs !== remotoTs) conflitos.push(reg.id);
+    if (remotoTs > atualTs) mapa.set(reg.id, reg);
+  }
+  return { registros: [...mapa.values()], conflitos };
+}
+
+/** Mescla os dados completos (todas as coleções). */
+function mesclarDados(local, remoto) {
+  const resultado = {};
+  const conflitos = {};
+  for (const colecao of COLECOES_SYNC) {
+    const r = mesclarColecao(local[colecao] ?? [], remoto[colecao] ?? []);
+    resultado[colecao] = r.registros;
+    conflitos[colecao] = r.conflitos;
+  }
+  return { dados: resultado, conflitos };
+}
+
+/** Verdadeiro se houve alteração local depois do último envio ao Drive. */
+function temPendencia(dados, ultimoEnvioIso) {
+  if (!ultimoEnvioIso) return COLECOES_SYNC.some((c) => (dados[c] ?? []).length > 0);
+  return COLECOES_SYNC.some((c) => (dados[c] ?? []).some((r) => (r.atualizadoEm ?? '') > ultimoEnvioIso));
+}
+
+return { COLECOES_SYNC, mesclarColecao, mesclarDados, temPendencia };
+})();
+
+const M_graficos = (() => {
+// Gráficos em SVG (rosca e linha), gerados como texto. Funções puras, testáveis no computador.
+
+const PALETA = ['#a8d8ea', '#f7c5d4', '#3d7e99', '#f2a7bd', '#7fbfd6', '#d9a5b8', '#5c9eb5', '#ffd6e0'];
+
+/** Cor da fatia pela posição; repete a paleta em ciclo. */
+function corDaFatia(indice) {
+  return PALETA[indice % PALETA.length];
+}
+
+const escapar = (t) =>
+  String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+/** Ângulos de cada fatia (em graus, a partir do topo, sentido horário). Grupos: { rotulo, valor }. */
+function anguloFatias(grupos) {
+  const total = grupos.reduce((s, g) => s + g.valor, 0);
+  if (total <= 0) return [];
+  let inicio = 0;
+  return grupos.map((g) => {
+    const fim = inicio + (g.valor / total) * 360;
+    const fatia = { rotulo: g.rotulo, valor: g.valor, inicio, fim, percentual: (g.valor / total) * 100 };
+    inicio = fim;
+    return fatia;
+  });
+}
+
+function ponto(cx, cy, raio, grau) {
+  const rad = ((grau - 90) * Math.PI) / 180;
+  return [cx + raio * Math.cos(rad), cy + raio * Math.sin(rad)];
+}
+
+/** Rosca com um arco por categoria, rótulo com percentual e mensagem quando não há dados. */
+function roscaSvg(grupos) {
+  const fatias = anguloFatias(grupos);
+  if (fatias.length === 0) return '<p class="vazio">Sem dados neste período.</p>';
+
+  const cx = 80, cy = 80, r = 70;
+  const partes = fatias.map((f, i) => {
+    const cor = corDaFatia(i);
+    const rotuloPct = `${escapar(f.rotulo)}: ${Math.round(f.percentual)}%`;
+    if (f.fim - f.inicio >= 359.999) {
+      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${cor}"><title>${rotuloPct}</title></circle>`;
+    }
+    const [x1, y1] = ponto(cx, cy, r, f.inicio);
+    const [x2, y2] = ponto(cx, cy, r, f.fim);
+    const grande = f.fim - f.inicio > 180 ? 1 : 0;
+    const d = `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${grande} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`;
+    return `<path d="${d}" fill="${cor}"><title>${rotuloPct}</title></path>`;
+  });
+
+  const legenda = fatias
+    .map(
+      (f, i) => `<div style="font-size:.85rem;display:flex;gap:6px;align-items:center;margin:2px 0">
+        <span style="width:12px;height:12px;border-radius:3px;background:${corDaFatia(i)};display:inline-block"></span>
+        <span>${escapar(f.rotulo)} · ${f.percentual.toFixed(1).replace('.', ',')}%</span></div>`,
+    )
+    .join('');
+
+  return `<div class="linha" style="align-items:center">
+    <svg viewBox="0 0 160 160" width="150" height="150" role="img" aria-label="Participação das categorias">${partes.join('')}</svg>
+    <div style="flex:1 1 140px">${legenda}</div></div>`;
+}
+
+/** Linha com um ponto por valor. Pontos: { x: rótulo do eixo, y: valor }. */
+function linhaSvg(pontos, titulo = 'Evolução') {
+  if (pontos.length === 0) return '<p class="vazio">Ainda não há compras suficientes para mostrar a evolução.</p>';
+
+  const largura = 300, altura = 150, margem = 16;
+  const max = Math.max(...pontos.map((p) => p.y), 0);
+  const passo = pontos.length > 1 ? (largura - 2 * margem) / (pontos.length - 1) : 0;
+  const coords = pontos.map((p, i) => ({
+    x: pontos.length === 1 ? largura / 2 : margem + i * passo,
+    y: max > 0 ? altura - 28 - (p.y / max) * (altura - 28 - margem) : altura - 28,
+    rotulo: p.x,
+    valor: p.y,
+  }));
+
+  const trajeto = coords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+  const marcas = coords
+    .map((c) => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3.5" fill="#3d7e99"><title>${escapar(c.rotulo)}: ${c.valor}</title></circle>`)
+    .join('');
+  const rotulos = coords
+    .map((c) => `<text x="${c.x.toFixed(1)}" y="${altura - 6}" font-size="9" text-anchor="middle" fill="#555">${escapar(c.rotulo)}</text>`)
+    .join('');
+
+  return `<svg viewBox="0 0 ${largura} ${altura}" width="100%" role="img" aria-label="${escapar(titulo)}">
+    <polyline points="${trajeto}" fill="none" stroke="#3d7e99" stroke-width="2"/>${marcas}${rotulos}</svg>`;
+}
+
+return { PALETA, corDaFatia, anguloFatias, roscaSvg, linhaSvg };
+})();
+
+const M_backup = (() => {
+// Backup, validação, mesclagem e exportação CSV. Funções puras, testáveis no computador.
+
+const { normalizarNome } = M_logica;
+const { diaLocal } = M_historico;
+const { NOME_EU } = M_config;
+
+const FORMATO = 'compras-da-casa';
+const VERSAO_BACKUP = 1;
+const COLECOES = ['categorias', 'produtos', 'listas', 'compras'];
+
+/** Monta o arquivo de backup com todos os dados. */
+function montarBackup({ categorias, produtos, listas, compras }, agoraIso) {
+  const dados = { categorias, produtos, listas, compras };
+  const contagem = Object.fromEntries(COLECOES.map((c) => [c, dados[c].length]));
+  return { formato: FORMATO, versao: VERSAO_BACKUP, geradoEm: agoraIso, contagem, dados };
+}
+
+/** Valida a estrutura do backup antes de qualquer importação. */
+function validarBackup(obj) {
+  const erros = [];
+  if (!obj || typeof obj !== 'object') return { ok: false, erros: ['O arquivo não é um backup válido.'] };
+  if (obj.formato !== FORMATO) erros.push('O arquivo não é de backup do Compras da Casa.');
+  if (obj.versao !== VERSAO_BACKUP) erros.push(`Versão de backup não suportada: ${obj.versao}.`);
+  if (!obj.dados || typeof obj.dados !== 'object') erros.push('Falta a seção de dados.');
+  if (erros.length) return { ok: false, erros };
+
+  for (const colecao of COLECOES) {
+    if (!Array.isArray(obj.dados[colecao])) {
+      erros.push(`A seção "${colecao}" não é uma lista.`);
+      continue;
+    }
+    const ids = new Set();
+    for (const reg of obj.dados[colecao]) {
+      if (!reg || typeof reg.id !== 'string' || !reg.id) {
+        erros.push(`Há um registro sem identificador em "${colecao}".`);
+        break;
+      }
+      if (ids.has(reg.id)) erros.push(`Identificador repetido em "${colecao}": ${reg.id}.`);
+      ids.add(reg.id);
+    }
+  }
+  if (erros.length) return { ok: false, erros };
+
+  for (const p of obj.dados.produtos) {
+    if (!p.nome || !p.categoriaId) erros.push(`Produto sem nome ou categoria: ${p.id}.`);
+  }
+  for (const c of obj.dados.compras) {
+    if (!Array.isArray(c.itens)) {
+      erros.push(`Compra sem lista de itens: ${c.id}.`);
+      continue;
+    }
+    for (const i of c.itens) {
+      if (i.status === 'comprado') {
+        if (!Number.isInteger(i.quantidade) || i.quantidade < 1) erros.push(`Quantidade inválida na compra ${c.id}.`);
+        if (typeof i.precoUnitario !== 'number' || i.precoUnitario < 0) erros.push(`Preço inválido na compra ${c.id}.`);
+      }
+    }
+  }
+  return { ok: erros.length === 0, erros, contagem: Object.fromEntries(COLECOES.map((c) => [c, obj.dados[c].length])) };
+}
+
+/**
+ * Planeja a mesclagem: adiciona só o que ainda não existe. Nunca altera nem apaga dados atuais.
+ * Produtos com nome igual a um existente (com ids diferentes) são sinalizados, não importados.
+ */
+function planejarMescla(atual, backup) {
+  const planos = { categorias: [], produtos: [], listas: [], compras: [] };
+  const suspeitos = [];
+
+  const idsAtuais = Object.fromEntries(COLECOES.map((c) => [c, new Set(atual[c].map((r) => r.id))]));
+  const nomesProdutos = new Set(atual.produtos.map((p) => normalizarNome(p.nome)));
+  const nomesCategorias = new Set(atual.categorias.map((c) => normalizarNome(c.nome)));
+
+  for (const cat of backup.dados.categorias) {
+    if (idsAtuais.categorias.has(cat.id)) continue;
+    if (nomesCategorias.has(normalizarNome(cat.nome))) {
+      suspeitos.push(`Categoria "${cat.nome}" já existe com outro identificador.`);
+      continue;
+    }
+    planos.categorias.push(cat);
+  }
+  for (const p of backup.dados.produtos) {
+    if (idsAtuais.produtos.has(p.id)) continue;
+    if (nomesProdutos.has(normalizarNome(p.nome))) {
+      suspeitos.push(`Produto "${p.nome}" já existe com outro identificador.`);
+      continue;
+    }
+    planos.produtos.push(p);
+  }
+  for (const l of backup.dados.listas) if (!idsAtuais.listas.has(l.id)) planos.listas.push(l);
+  for (const c of backup.dados.compras) if (!idsAtuais.compras.has(c.id)) planos.compras.push(c);
+
+  return { planos, suspeitos };
+}
+
+/** Relatório de compras em CSV (separador ';' e vírgula decimal, como o Excel no Brasil). */
+function csvItens(compras, produtos) {
+  const porId = new Map(produtos.map((p) => [p.id, p]));
+  const numero = (n) => (typeof n === 'number' ? n.toFixed(2).replace('.', ',') : '');
+  const linhas = [['Data', 'Estabelecimento', 'Responsável', 'Produto', 'Quantidade', 'Preço unitário', 'Subtotal']];
+  for (const c of compras) {
+    if (c.status !== 'finalizada') continue;
+    for (const i of c.itens) {
+      if (i.status !== 'comprado') continue;
+      linhas.push([
+        diaLocal(c.finalizadaEm).split('-').reverse().join('/'),
+        c.estabelecimento || '',
+        c.responsavel === 'viviane' ? 'Viviane' : NOME_EU,
+        porId.get(i.produtoId)?.nome ?? i.nomeProduto,
+        String(i.quantidade),
+        numero(i.precoUnitario),
+        numero(Math.round(i.quantidade * i.precoUnitario * 100) / 100),
+      ]);
+    }
+  }
+  const escapaCampo = (v) => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  return '﻿' + linhas.map((l) => l.map(escapaCampo).join(';')).join('\r\n');
+}
+
+return { FORMATO, VERSAO_BACKUP, montarBackup, validarBackup, planejarMescla, csvItens };
+})();
+
+const M_banco = (() => {
+// Banco local (IndexedDB). Os dados ficam no próprio celular e continuam salvos após fechar o navegador.
+// Este arquivo só roda no navegador.
+
+const NOME_BANCO = 'compras-da-casa';
+const VERSAO = 2;
+
+function abrir() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(NOME_BANCO, VERSAO);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('categorias')) {
+        db.createObjectStore('categorias', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('produtos')) {
+        const s = db.createObjectStore('produtos', { keyPath: 'id' });
+        s.createIndex('categoriaId', 'categoriaId');
+      }
+      if (!db.objectStoreNames.contains('listas')) {
+        db.createObjectStore('listas', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('compras')) {
+        db.createObjectStore('compras', { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+let conexao = null;
+async function db() {
+  if (!conexao) conexao = await abrir();
+  return conexao;
+}
+
+function transacao(lojas, modo, fn) {
+  return db().then(
+    (conn) =>
+      new Promise((resolve, reject) => {
+        const tx = conn.transaction(lojas, modo);
+        const resultado = fn(tx);
+        tx.oncomplete = () => resolve(resultado?.valor);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      }),
+  );
+}
+
+function pedido(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+const categorias = {
+  listar: async () => {
+    const conn = await db();
+    return pedido(conn.transaction('categorias').objectStore('categorias').getAll());
+  },
+  salvar: (cat) => transacao(['categorias'], 'readwrite', (tx) => {
+    tx.objectStore('categorias').put(cat);
+  }),
+};
+
+const produtos = {
+  listar: async () => {
+    const conn = await db();
+    return pedido(conn.transaction('produtos').objectStore('produtos').getAll());
+  },
+  salvar: (prod) => transacao(['produtos'], 'readwrite', (tx) => {
+    tx.objectStore('produtos').put(prod);
+  }),
+};
+
+const listas = {
+  listar: async () => {
+    const conn = await db();
+    return pedido(conn.transaction('listas').objectStore('listas').getAll());
+  },
+  salvar: (lista) => transacao(['listas'], 'readwrite', (tx) => {
+    tx.objectStore('listas').put(lista);
+  }),
+};
+
+const compras = {
+  listar: async () => {
+    const conn = await db();
+    return pedido(conn.transaction('compras').objectStore('compras').getAll());
+  },
+  salvar: (compra) => transacao(['compras'], 'readwrite', (tx) => {
+    tx.objectStore('compras').put(compra);
+  }),
+};
+
+/**
+ * Grava vários registros em uma única transação (tudo ou nada).
+ * Com substituir = true, apaga antes todos os dados locais: só deve ser chamado após confirmação explícita.
+ */
+async function gravarLotes(lotes, { substituir = false } = {}) {
+  const conn = await db();
+  const lojas = ['categorias', 'produtos', 'listas', 'compras'];
+  await new Promise((resolve, reject) => {
+    const tx = conn.transaction(lojas, 'readwrite');
+    for (const loja of lojas) {
+      const store = tx.objectStore(loja);
+      if (substituir) store.clear();
+      for (const reg of lotes[loja] ?? []) store.put(reg);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+/** Cria um identificador único (sem depender de servidor). */
+function novoId(prefixo) {
+  return `${prefixo}_${crypto.randomUUID()}`;
+}
+
+return { categorias, produtos, listas, compras, gravarLotes, novoId };
+})();
+
+const M_drive = (() => {
+// Sincronização com o Google Drive: um arquivo por pessoa dentro da pasta "Compras da Casa".
+// Cada celular grava só o próprio arquivo e lê o do outro. ATENÇÃO: este código não foi testado
+// contra o Google Drive real, porque depende do ID do cliente OAuth ainda não configurado.
+
+const { GOOGLE_CLIENT_ID, NOME_PASTA_DRIVE, ESCOPO_DRIVE } = M_config;
+const { mesclarDados } = M_sincronizacao;
+
+const API = 'https://www.googleapis.com/drive/v3';
+const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
+let token = null;
+
+function driveConfigurado() {
+  return GOOGLE_CLIENT_ID.trim() !== '';
+}
+
+function carregarGis() {
+  return new Promise((resolve, reject) => {
+    if (window.google?.accounts?.oauth2) return resolve();
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Não foi possível carregar o login do Google.'));
+    document.head.appendChild(s);
+  });
+}
+
+/** Pede permissão de acesso aos arquivos criados pelo app (escopo drive.file). */
+async function conectar() {
+  if (!driveConfigurado()) throw new Error('Configure o ID do cliente do Google antes de conectar.');
+  await carregarGis();
+  return new Promise((resolve, reject) => {
+    const cliente = window.google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: ESCOPO_DRIVE,
+      callback: (resp) => {
+        if (resp.error) return reject(new Error(resp.error));
+        token = resp.access_token;
+        resolve(true);
+      },
+    });
+    cliente.requestAccessToken();
+  });
+}
+
+async function chamar(url, opcoes = {}) {
+  if (!token) throw new Error('Conecte-se ao Google Drive primeiro.');
+  const resp = await fetch(url, {
+    ...opcoes,
+    headers: { Authorization: `Bearer ${token}`, ...(opcoes.headers ?? {}) },
+  });
+  if (!resp.ok) throw new Error(`Erro no Google Drive (${resp.status}).`);
+  return resp;
+}
+
+async function acharOuCriarPasta() {
+  const q = encodeURIComponent(`name='${NOME_PASTA_DRIVE}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const lista = await (await chamar(`${API}/files?q=${q}&fields=files(id)`)).json();
+  if (lista.files?.length) return lista.files[0].id;
+  const criada = await (await chamar(`${API}/files?fields=id`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: NOME_PASTA_DRIVE, mimeType: 'application/vnd.google-apps.folder' }),
+  })).json();
+  return criada.id;
+}
+
+async function acharArquivo(pastaId, nome) {
+  const q = encodeURIComponent(`name='${nome}' and '${pastaId}' in parents and trashed=false`);
+  const lista = await (await chamar(`${API}/files?q=${q}&fields=files(id)`)).json();
+  return lista.files?.[0]?.id ?? null;
+}
+
+async function lerArquivo(id) {
+  return (await chamar(`${API}/files/${id}?alt=media`)).json();
+}
+
+async function gravarArquivo(pastaId, nome, conteudo) {
+  const existente = await acharArquivo(pastaId, nome);
+  const corpo = JSON.stringify(conteudo);
+  if (existente) {
+    await chamar(`${UPLOAD}/files/${existente}?uploadType=media`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: corpo,
+    });
+    return existente;
+  }
+  const boundary = 'compras_da_casa_' + Date.now();
+  const metadados = JSON.stringify({ name: nome, parents: [pastaId] });
+  const multipart =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadados}\r\n` +
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${corpo}\r\n--${boundary}--`;
+  const criado = await (await chamar(`${UPLOAD}/files?uploadType=multipart&fields=id`, {
+    method: 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body: multipart,
+  })).json();
+  return criado.id;
+}
+
+/**
+ * Sincroniza: lê o arquivo do outro celular, mescla com os dados locais e grava o próprio arquivo.
+ * Devolve os dados mesclados (para o app aplicar) e os conflitos resolvidos.
+ */
+async function sincronizar(dadosLocais, donoDesteCelular, nomeOutro) {
+  const pasta = await acharOuCriarPasta();
+  const idOutro = await acharArquivo(pasta, `compras-${nomeOutro}.json`);
+  const remoto = idOutro ? (await lerArquivo(idOutro)).dados ?? {} : {};
+  const { dados, conflitos } = mesclarDados(dadosLocais, remoto);
+  await gravarArquivo(pasta, `compras-${donoDesteCelular}.json`, {
+    formato: 'compras-da-casa-sync',
+    versao: 1,
+    geradoEm: new Date().toISOString(),
+    dados,
+  });
+  return { dados, conflitos };
+}
+
+return { driveConfigurado, conectar, sincronizar };
+})();
+
+const M_app = (() => {
+const banco = M_banco;
+const { novoId } = M_banco;
+// Dados iniciais embutidos no código: o app não depende de arquivos externos nem de servidor.
+const seed = {"versao_cadastro":1,"observacao":"Lista inicial enviada pelo usuário em 29/10/2026. Unidade, apresentação e marca ficam vazias até serem preenchidas no app; nenhum preço ou histórico foi inventado.","categorias":["Mercearia e alimentos básicos","Leites, frios e laticínios","Pães e acompanhamentos","Carnes e proteínas","Limpeza da casa","Higiene pessoal"],"produtos":[{"nome":"Arroz","categoria":"Mercearia e alimentos básicos"},{"nome":"Macarrão","categoria":"Mercearia e alimentos básicos"},{"nome":"Sal","categoria":"Mercearia e alimentos básicos"},{"nome":"Açúcar","categoria":"Mercearia e alimentos básicos"},{"nome":"Café","categoria":"Mercearia e alimentos básicos"},{"nome":"Flocão","categoria":"Mercearia e alimentos básicos"},{"nome":"Tapioca","categoria":"Mercearia e alimentos básicos"},{"nome":"Milho verde","categoria":"Mercearia e alimentos básicos"},{"nome":"Molho de tomate","categoria":"Mercearia e alimentos básicos"},{"nome":"Colorau","categoria":"Mercearia e alimentos básicos"},{"nome":"Pimenta","categoria":"Mercearia e alimentos básicos"},{"nome":"Vinagre","categoria":"Mercearia e alimentos básicos"},{"nome":"Azeite","categoria":"Mercearia e alimentos básicos"},{"nome":"Shoyu","categoria":"Mercearia e alimentos básicos"},{"nome":"Lemon pepper","categoria":"Mercearia e alimentos básicos"},{"nome":"Leite","categoria":"Leites, frios e laticínios"},{"nome":"Leite em pó pequeno","categoria":"Leites, frios e laticínios"},{"nome":"Leite em pó grande","categoria":"Leites, frios e laticínios"},{"nome":"Leite de coco","categoria":"Leites, frios e laticínios"},{"nome":"Iogurte","categoria":"Leites, frios e laticínios"},{"nome":"Requeijão","categoria":"Leites, frios e laticínios"},{"nome":"Queijo","categoria":"Leites, frios e laticínios"},{"nome":"Presunto","categoria":"Leites, frios e laticínios"},{"nome":"Creme de leite","categoria":"Leites, frios e laticínios"},{"nome":"Margarina","categoria":"Leites, frios e laticínios"},{"nome":"Manteiga","categoria":"Leites, frios e laticínios"},{"nome":"Pão","categoria":"Pães e acompanhamentos"},{"nome":"Pão de queijo","categoria":"Pães e acompanhamentos"},{"nome":"Torrada","categoria":"Pães e acompanhamentos"},{"nome":"Ovos","categoria":"Pães e acompanhamentos"},{"nome":"Adoçante","categoria":"Pães e acompanhamentos"},{"nome":"Tilápia","categoria":"Carnes e proteínas"},{"nome":"Carne bovina","categoria":"Carnes e proteínas"},{"nome":"Carne suína","categoria":"Carnes e proteínas"},{"nome":"Linguiça","categoria":"Carnes e proteínas"},{"nome":"Sobrecoxa de frango","categoria":"Carnes e proteínas"},{"nome":"Filé de frango","categoria":"Carnes e proteínas"},{"nome":"Nuggets","categoria":"Carnes e proteínas"},{"nome":"Hambúrguer","categoria":"Carnes e proteínas"},{"nome":"Atum","categoria":"Carnes e proteínas"},{"nome":"Batata frita","categoria":"Carnes e proteínas"},{"nome":"Detergente","categoria":"Limpeza da casa"},{"nome":"Esponja de louças","categoria":"Limpeza da casa"},{"nome":"Pedra sanitária","categoria":"Limpeza da casa"},{"nome":"Água sanitária","categoria":"Limpeza da casa"},{"nome":"Multiuso","categoria":"Limpeza da casa"},{"nome":"Desinfetante","categoria":"Limpeza da casa"},{"nome":"Creme dental","categoria":"Higiene pessoal"},{"nome":"Escova dental","categoria":"Higiene pessoal"},{"nome":"Enxaguante bucal","categoria":"Higiene pessoal"},{"nome":"Desodorante","categoria":"Higiene pessoal"},{"nome":"Shampoo","categoria":"Higiene pessoal"},{"nome":"Condicionador","categoria":"Higiene pessoal"},{"nome":"Sabonete","categoria":"Higiene pessoal"},{"nome":"Lâmina de barbear","categoria":"Higiene pessoal"}]};
+const { validarEdicaoProduto, validarCategoria } = M_produtos;
+const { driveConfigurado, conectar: conectarDrive, sincronizar } = M_drive;
+const { NOME_EU, VERSAO_APP } = M_config;
+const { validarProduto, encontrarSimilares, agruparPorCategoria, formatarData, formatarMoeda } = M_logica;
+const { aplicarCorrecao } = M_correcao;
+const { roscaSvg, linhaSvg, corDaFatia } = M_graficos;
+const { montarBackup, validarBackup, planejarMescla, csvItens } = M_backup;
+const { periodoAnterior, periodoRapido, itensFiltrados, resumoGastos, gastosPor, maioresVariacoes, ordenarGrupos } = M_relatorios;
+const { filtrarCompras, historicoDoProduto, estabelecimentosUsados, diaLocal } = M_historico;
+const { STATUS_ITEM, lerDecimal, subtotalItem, totalCompra, ultimoPrecoPago, validarParaFinalizar, resumoCompra, variacaoPercentual } = M_compra;
+
+const tela = document.getElementById('tela');
+const status = document.getElementById('status');
+const botoes = document.querySelectorAll('.navegacao button');
+
+const estado = {
+  categorias: [],
+  produtos: [],
+  listas: [],
+  compras: [],
+  compraAtual: null,
+  revisando: false,
+  filtrosHist: { dataInicial: '', dataFinal: '', estabelecimento: '', responsavel: '', produtoId: '' },
+  compraAbertaId: null,
+  filtrosRel: { dataInicial: '', dataFinal: '', estabelecimento: '', responsavel: '', categoriaId: '' },
+  importacao: null, // { backup, validacao, planos, suspeitos } enquanto o usuário decide
+  editandoProdutoId: null,
+  ordenacaoRel: 'valor', // 'valor' | 'quantidade' | 'nome'
+  corrigindoId: null, // compra finalizada aberta para correção
+  rascunhoCorrecao: null, // cópia editável dos dados da correção em curso
+  telaAtual: 'inicio',
+  buscaProdutos: '',
+  buscaPreparar: '',
+  // Seleção em andamento da tela Preparar lista (produtoId -> quantidade planejada)
+  selecao: new Map(),
+};
+
+function mostrarStatus(texto, erro = false) {
+  status.textContent = texto;
+  status.classList.toggle('erro', erro);
+}
+
+/** Pessoa dona deste celular ("eu" ou "viviane"): define o arquivo gravado no Drive. */
+const donoDesteCelular = () => localStorage.getItem('dono') || 'eu';
+
+function escapar(texto) {
+  return String(texto ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c]);
+}
+
+async function carregarDados() {
+  estado.categorias = await banco.categorias.listar();
+  estado.produtos = await banco.produtos.listar();
+  estado.listas = await banco.listas.listar();
+  estado.compras = await banco.compras.listar();
+}
+
+/** Na primeira abertura, carrega as categorias e os 55 produtos iniciais. Não duplica se já existirem. */
+async function garantirCadastroInicial() {
+  if (estado.produtos.length > 0 || estado.categorias.length > 0) return;
+  const idPorNome = new Map();
+  for (const nome of seed.categorias) {
+    const cat = { id: novoId('cat'), nome };
+    idPorNome.set(nome, cat.id);
+    await banco.categorias.salvar(cat);
+  }
+  for (const p of seed.produtos) {
+    await banco.produtos.salvar({
+      id: novoId('prod'),
+      nome: p.nome,
+      categoriaId: idPorNome.get(p.categoria),
+      ativo: true,
+      criadoEm: new Date().toISOString(),
+    });
+  }
+  await carregarDados();
+}
+
+// ---------- Tela: Início ----------
+function telaInicio() {
+  const hoje = hojeIso();
+  const mes = periodoRapido('mes', hoje);
+  const mesAnterior = periodoAnterior(mes.dataInicial, mes.dataFinal);
+  const linhasMes = itensFiltrados(estado.compras, estado.produtos, mes);
+  const resumo = resumoGastos(linhasMes);
+  const resumoAnt = resumoGastos(itensFiltrados(estado.compras, estado.produtos, mesAnterior));
+  const variacaoTotal = variacaoPercentual(resumoAnt.total, resumo.total);
+  const variacoes = maioresVariacoes(estado.compras);
+  const porCategoria = gastosPor(linhasMes, (l) => l.categoriaId ?? 'sem', (l) => {
+    const cat = estado.categorias.find((c) => c.id === l.categoriaId);
+    return cat?.nome ?? 'Sem categoria';
+  });
+  const emAndamento = estado.compras.find((c) => c.status === 'em_andamento');
+
+  const cartaoIndicador = (rotulo, valor) => `
+    <div class="cartao" style="flex:1 1 140px;margin-bottom:0">
+      <div style="font-size:.8rem;color:#555">${rotulo}</div>
+      <div style="font-size:1.15rem;font-weight:600">${valor}</div>
+    </div>`;
+
+  tela.innerHTML = `
+    ${emAndamento
+      ? `<div class="aviso">Você tem uma compra em andamento. <button id="ir-compra" class="secundario" style="margin-left:6px">Continuar</button></div>`
+      : ''}
+
+    <h2>Este mês</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      ${cartaoIndicador('Total gasto', formatarMoeda(resumo.total))}
+      ${cartaoIndicador('Compras', String(resumo.compras))}
+      ${cartaoIndicador('Média por compra', formatarMoeda(resumo.mediaPorCompra))}
+      ${cartaoIndicador(
+        'Em relação ao mês anterior',
+        variacaoTotal === null ? 'Sem base' : `${variacaoTotal > 0 ? '+' : ''}${variacaoTotal.toFixed(2).replace('.', ',')}%`,
+      )}
+      ${cartaoIndicador('Produtos mais caros', String(variacoes.aumentos.length))}
+      ${cartaoIndicador('Produtos mais baratos', String(variacoes.reducoes.length))}
+    </div>
+
+    <div class="cartao" style="margin-top:12px">
+      <h2 style="margin-top:0">Gastos por categoria no mês</h2>
+      ${
+        porCategoria.length === 0
+          ? '<p class="vazio">Nenhuma compra finalizada neste mês ainda.</p>'
+          : `<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+              <div style="width:180px;max-width:50%">${roscaSvg(porCategoria.map((g) => ({ rotulo: g.rotulo, valor: g.total })))}</div>
+              <ul style="list-style:none;padding:0;margin:0;flex:1 1 140px;font-size:.9rem">
+                ${porCategoria
+                  .map(
+                    (g, i) => `<li style="margin:4px 0"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${corDaFatia(i)};margin-right:6px"></span>${escapar(g.rotulo)}: <strong>${formatarMoeda(g.total)}</strong> (${g.participacao.toFixed(1).replace('.', ',')}%)</li>`,
+                  )
+                  .join('')}
+              </ul>
+            </div>`
+      }
+    </div>
+
+    <div class="cartao">
+      <p>Para começar uma ida ao mercado, toque em <strong>Preparar</strong>.</p>
+    </div>
+  `;
+
+  document.getElementById('ir-compra')?.addEventListener('click', () => irPara('compra'));
+}
+
+// ---------- Tela: Produtos e categorias ----------
+function telaProdutos() {
+  const termo = estado.buscaProdutos.trim().toLowerCase();
+  const filtrados = estado.produtos.filter((p) => !termo || p.nome.toLowerCase().includes(termo));
+  const grupos = estado.categorias
+    .map((cat) => ({
+      cat,
+      itens: filtrados
+        .filter((p) => p.categoriaId === cat.id)
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+    }))
+    .filter((g) => g.itens.length > 0);
+
+  tela.innerHTML = `
+    <div class="cartao">
+      <label for="busca-produtos">Pesquisar produto</label>
+      <input id="busca-produtos" type="search" placeholder="Digite o nome" value="${escapar(estado.buscaProdutos)}">
+    </div>
+
+    <div class="cartao">
+      <h2>Adicionar produto</h2>
+      <form id="form-produto">
+        <label for="novo-nome">Nome</label>
+        <input id="novo-nome" required maxlength="80" placeholder="Ex.: Café 500 g">
+        <label for="nova-cat">Categoria</label>
+        <select id="nova-cat">
+          ${estado.categorias.map((c) => `<option value="${c.id}">${escapar(c.nome)}</option>`).join('')}
+        </select>
+        <div id="aviso-duplicado"></div>
+        <div class="linha" style="margin-top:12px">
+          <button type="submit" class="destaque">Adicionar produto</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="cartao">
+      <h2>Nova categoria</h2>
+      <form id="form-categoria">
+        <label for="nova-categoria">Nome da categoria</label>
+        <input id="nova-categoria" required maxlength="60">
+        <div class="linha" style="margin-top:12px">
+          <button type="submit" class="secundario">Criar categoria</button>
+        </div>
+      </form>
+    </div>
+
+    ${grupos.length === 0 ? '<p class="vazio">Nenhum produto encontrado.</p>' : ''}
+    ${grupos
+      .map(
+        (g) => `
+      <div class="cartao">
+        <div class="linha" style="justify-content:space-between"><h2 style="margin:0">${escapar(g.cat.nome)}</h2><button class="secundario" data-acao="renomear-cat" data-cat="${g.cat.id}">Renomear</button></div>
+        ${g.itens
+          .map(
+            (p) => `
+          <div class="item-produto">
+            <span class="nome" style="${p.ativo ? '' : 'color:#999;text-decoration:line-through'}">${escapar(p.nome)}</span>
+            <span style="display:flex;gap:6px"><button class="secundario" data-acao="editar" data-id="${p.id}">Editar</button><button class="secundario" data-acao="alternar" data-id="${p.id}">${p.ativo ? 'Desativar' : 'Reativar'}</button></span>
+          </div>`,
+          )
+          .join('')}
+      </div>`,
+      )
+      .join('')}
+  `;
+
+  document.getElementById('busca-produtos').addEventListener('input', (e) => {
+    estado.buscaProdutos = e.target.value;
+    telaProdutos();
+    document.getElementById('busca-produtos').focus();
+  });
+
+  const campoNome = document.getElementById('novo-nome');
+  const avisoDiv = document.getElementById('aviso-duplicado');
+  let confirmouDuplicidade = false;
+  campoNome.addEventListener('input', () => {
+    confirmouDuplicidade = false;
+    const similares = encontrarSimilares(campoNome.value, estado.produtos);
+    avisoDiv.innerHTML = similares.length
+      ? `<div class="aviso">Já existe um produto parecido: ${similares
+          .map((s) => escapar(s.nome))
+          .join(', ')}. Se for outro produto, toque em Adicionar de novo para confirmar.</div>`
+      : '';
+  });
+
+  document.getElementById('form-produto').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nome = campoNome.value;
+    const categoriaId = document.getElementById('nova-cat').value;
+    const { ok, erros, nome: nomeLimpo } = validarProduto({ nome, categoriaId });
+    if (!ok) return mostrarStatus(erros[0], true);
+
+    const similares = encontrarSimilares(nomeLimpo, estado.produtos);
+    if (similares.length && !confirmouDuplicidade) {
+      confirmouDuplicidade = true;
+      return mostrarStatus('Confirme: há produtos parecidos. Toque em Adicionar de novo para salvar mesmo assim.', true);
+    }
+
+    try {
+      await banco.produtos.salvar({
+        id: novoId('prod'),
+        nome: nomeLimpo,
+        categoriaId,
+        ativo: true,
+        criadoEm: new Date().toISOString(),
+      });
+      await carregarDados();
+      mostrarStatus('Produto salvo neste celular');
+      telaProdutos();
+    } catch (err) {
+      mostrarStatus('Erro ao salvar o produto. Tente novamente.', true);
+      console.error(err);
+    }
+  });
+
+  document.getElementById('form-categoria').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nome = document.getElementById('nova-categoria').value.replace(/\s+/g, ' ').trim();
+    if (!nome) return mostrarStatus('Informe o nome da categoria.', true);
+    if (estado.categorias.some((c) => c.nome.toLowerCase() === nome.toLowerCase())) {
+      return mostrarStatus('Já existe uma categoria com esse nome.', true);
+    }
+    await banco.categorias.salvar({ id: novoId('cat'), nome });
+    await carregarDados();
+    mostrarStatus('Categoria criada');
+    telaProdutos();
+  });
+
+  tela.querySelectorAll('[data-acao="editar"]').forEach((botao) => {
+    botao.addEventListener('click', () => {
+      estado.editandoProdutoId = botao.dataset.id;
+      telaProdutos();
+      document.getElementById('editar-produto')?.scrollIntoView({ behavior: 'smooth' });
+    });
+  });
+
+  tela.querySelectorAll('[data-acao="renomear-cat"]').forEach((botao) => {
+    botao.addEventListener('click', async () => {
+      const cat = estado.categorias.find((c) => c.id === botao.dataset.cat);
+      const novo = prompt('Novo nome da categoria:', cat?.nome ?? '');
+      if (novo === null) return;
+      const v = validarCategoria(estado.categorias, { nome: novo }, cat.id);
+      if (!v.ok) return mostrarStatus(v.erros[0], true);
+      // Mudar o nome não altera os produtos nem o histórico: eles usam o id da categoria.
+      await banco.categorias.salvar({ ...cat, nome: v.nome, atualizadoEm: new Date().toISOString() });
+      await carregarDados();
+      mostrarStatus('Categoria renomeada');
+      telaProdutos();
+    });
+  });
+
+  if (estado.editandoProdutoId) {
+    const p = estado.produtos.find((x) => x.id === estado.editandoProdutoId);
+    if (p) {
+      tela.insertAdjacentHTML('afterbegin', `
+        <div class="cartao" id="editar-produto">
+          <h2>Editar produto</h2>
+          <p style="font-size:.85rem;color:#555">O histórico de compras deste produto é preservado.</p>
+          <label for="ed-nome">Nome</label>
+          <input id="ed-nome" maxlength="80" value="${escapar(p.nome)}">
+          <label for="ed-cat">Categoria</label>
+          <select id="ed-cat">
+            ${estado.categorias.map((c) => `<option value="${c.id}" ${c.id === p.categoriaId ? 'selected' : ''}>${escapar(c.nome)}</option>`).join('')}
+          </select>
+          <div id="ed-aviso"></div>
+          <div class="linha" style="margin-top:12px">
+            <button id="ed-salvar" class="destaque">Salvar</button>
+            <button id="ed-cancelar" class="secundario">Cancelar</button>
+          </div>
+        </div>`);
+      document.getElementById('ed-cancelar').addEventListener('click', () => {
+        estado.editandoProdutoId = null;
+        telaProdutos();
+      });
+      document.getElementById('ed-salvar').addEventListener('click', async () => {
+        const nome = document.getElementById('ed-nome').value;
+        const categoriaId = document.getElementById('ed-cat').value;
+        const v = validarEdicaoProduto(estado.produtos, p.id, { nome, categoriaId });
+        if (!v.ok) return mostrarStatus(v.erros[0], true);
+        if (v.similares.length && !confirm(`Já existe um produto parecido (${v.similares.map((s) => s.nome).join(', ')}). Salvar mesmo assim?`)) return;
+        await banco.produtos.salvar({ ...p, nome: v.nome, categoriaId, atualizadoEm: new Date().toISOString() });
+        await carregarDados();
+        estado.editandoProdutoId = null;
+        mostrarStatus('Produto atualizado');
+        telaProdutos();
+      });
+    }
+  }
+
+  tela.querySelectorAll('[data-acao="alternar"]').forEach((botao) => {
+    botao.addEventListener('click', async () => {
+      const produto = estado.produtos.find((p) => p.id === botao.dataset.id);
+      if (!produto) return;
+      // Desativar não apaga o produto nem o histórico: ele só some da seleção padrão.
+      await banco.produtos.salvar({ ...produto, ativo: !produto.ativo });
+      await carregarDados();
+      telaProdutos();
+    });
+  });
+}
+
+// ---------- Tela: Preparar lista ----------
+function telaPreparar() {
+  const termo = estado.buscaPreparar.trim().toLowerCase();
+  const grupos = agruparPorCategoria(estado.categorias, estado.produtos).map((g) => ({
+    ...g,
+    produtos: g.produtos.filter((p) => !termo || p.nome.toLowerCase().includes(termo)),
+  })).filter((g) => g.produtos.length > 0);
+
+  tela.innerHTML = `
+    <div class="cartao">
+      <label for="busca-preparar">Pesquisar</label>
+      <input id="busca-preparar" type="search" placeholder="Nome do produto" value="${escapar(estado.buscaPreparar)}">
+      <p style="font-size:0.9rem;color:#555">Selecionados: <strong>${estado.selecao.size}</strong></p>
+    </div>
+
+    ${grupos.length === 0 ? '<p class="vazio">Nenhum produto ativo encontrado.</p>' : ''}
+    ${grupos
+      .map(
+        (g) => `
+      <div class="cartao">
+        <div class="linha" style="justify-content:space-between">
+          <h2 style="margin:0">${escapar(g.categoria.nome)}</h2>
+          <button class="secundario" data-acao="cat-todos" data-cat="${g.categoria.id}">Marcar todos</button>
+        </div>
+        ${g.produtos
+          .map((p) => {
+            const marcado = estado.selecao.has(p.id);
+            const qtd = marcado ? estado.selecao.get(p.id) : 1;
+            return `
+          <div class="item-produto">
+            <input type="checkbox" data-acao="marcar" data-id="${p.id}" ${marcado ? 'checked' : ''} aria-label="Selecionar ${escapar(p.nome)}">
+            <span class="nome">${escapar(p.nome)}</span>
+            <input type="number" min="1" step="1" inputmode="numeric" data-acao="qtd" data-id="${p.id}" value="${qtd}" aria-label="Quantidade de ${escapar(p.nome)}" ${marcado ? '' : 'disabled'}>
+          </div>`;
+          })
+          .join('')}
+      </div>`,
+      )
+      .join('')}
+
+    <div class="cartao">
+      <button id="gerar-lista" class="destaque" style="width:100%" ${estado.selecao.size === 0 ? 'disabled' : ''}>Gerar lista de compras</button>
+    </div>
+  `;
+
+  document.getElementById('busca-preparar').addEventListener('input', (e) => {
+    estado.buscaPreparar = e.target.value;
+    telaPreparar();
+    document.getElementById('busca-preparar').focus();
+  });
+
+  tela.querySelectorAll('[data-acao="marcar"]').forEach((c) => {
+    c.addEventListener('change', () => {
+      if (c.checked) estado.selecao.set(c.dataset.id, 1);
+      else estado.selecao.delete(c.dataset.id);
+      telaPreparar();
+    });
+  });
+
+  tela.querySelectorAll('[data-acao="qtd"]').forEach((campo) => {
+    campo.addEventListener('change', () => {
+      const valor = Number(campo.value);
+      if (!Number.isInteger(valor) || valor < 1) {
+        mostrarStatus('A quantidade deve ser um número inteiro de pelo menos 1.', true);
+        campo.value = estado.selecao.get(campo.dataset.id) ?? 1;
+        return;
+      }
+      estado.selecao.set(campo.dataset.id, valor);
+    });
+  });
+
+  tela.querySelectorAll('[data-acao="cat-todos"]').forEach((botao) => {
+    botao.addEventListener('click', () => {
+      const grupo = grupos.find((g) => g.categoria.id === botao.dataset.cat);
+      if (!grupo) return;
+      const todosMarcados = grupo.produtos.every((p) => estado.selecao.has(p.id));
+      for (const p of grupo.produtos) {
+        if (todosMarcados) estado.selecao.delete(p.id);
+        else if (!estado.selecao.has(p.id)) estado.selecao.set(p.id, 1);
+      }
+      telaPreparar();
+    });
+  });
+
+  document.getElementById('gerar-lista')?.addEventListener('click', async () => {
+    const itens = [...estado.selecao.entries()].map(([produtoId, quantidadePlanejada]) => ({
+      produtoId,
+      quantidadePlanejada,
+    }));
+    const lista = {
+      id: novoId('lista'),
+      criadaEm: new Date().toISOString(),
+      status: 'planejada',
+      itens,
+    };
+    await banco.listas.salvar(lista);
+    await carregarDados();
+    estado.selecao = new Map();
+    mostrarStatus(`Lista criada com ${itens.length} produto(s) em ${formatarData(lista.criadaEm)}`);
+    telaPreparar();
+  });
+}
+
+// ---------- Tela: Compra em andamento ----------
+const ROTULO_STATUS = {
+  [STATUS_ITEM.PENDENTE]: 'Pendente',
+  [STATUS_ITEM.COMPRADO]: 'Comprado',
+  [STATUS_ITEM.NAO_ENCONTRADO]: 'Não encontrado',
+  [STATUS_ITEM.NAO_COMPRADO]: 'Não comprado',
+};
+let finalizando = false;
+
+function nomeResponsavel(valor) {
+  return valor === 'viviane' ? 'Viviane' : NOME_EU;
+}
+
+async function salvarCompraAtual() {
+  try {
+    await banco.compras.salvar(estado.compraAtual);
+    mostrarStatus('Salvo neste celular');
+    return true;
+  } catch (err) {
+    mostrarStatus('Erro ao salvar a compra. Verifique o armazenamento do navegador.', true);
+    console.error(err);
+    return false;
+  }
+}
+
+function telaCompra() {
+  estado.compraAtual = estado.compras.find((c) => c.status === 'em_andamento') ?? null;
+  if (!estado.compraAtual) return telaIniciarCompra();
+  if (estado.revisando) return telaRevisarCompra();
+  return telaEmAndamento();
+}
+
+function telaIniciarCompra() {
+  const responsavelSalvo = localStorage.getItem('responsavel') || 'eu';
+  // Lista já usada em uma compra (em andamento ou finalizada) não aparece mais para começar outra compra.
+  const listasUsadas = new Set(
+    estado.compras.filter((c) => c.listaId && ['em_andamento', 'finalizada'].includes(c.status)).map((c) => c.listaId),
+  );
+  const listasRecentes = estado.listas
+    .filter((l) => !listasUsadas.has(l.id) && l.status !== 'concluida')
+    .sort((a, b) => b.criadaEm.localeCompare(a.criadaEm));
+  tela.innerHTML = `
+    <div class="cartao">
+      <h2>Começar compra</h2>
+      <label for="lista-base">Lista preparada</label>
+      <select id="lista-base">
+        <option value="">Sem lista (adicionar produtos durante a compra)</option>
+        ${listasRecentes
+          .map((l) => `<option value="${l.id}">Lista de ${formatarData(l.criadaEm)} (${l.itens.length} produtos)</option>`)
+          .join('')}
+      </select>
+      <label for="responsavel">Quem está comprando</label>
+      <select id="responsavel">
+        <option value="eu" ${responsavelSalvo === 'eu' ? 'selected' : ''}>${NOME_EU}</option>
+        <option value="viviane" ${responsavelSalvo === 'viviane' ? 'selected' : ''}>Viviane</option>
+      </select>
+      <div class="linha" style="margin-top:12px">
+        <button id="iniciar-compra" class="destaque">Iniciar compra</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('iniciar-compra').addEventListener('click', async () => {
+    const listaId = document.getElementById('lista-base').value;
+    const responsavel = document.getElementById('responsavel').value;
+    localStorage.setItem('responsavel', responsavel);
+    const lista = estado.listas.find((l) => l.id === listaId);
+    const itens = (lista?.itens ?? []).map((i) => {
+      const produto = estado.produtos.find((p) => p.id === i.produtoId);
+      return {
+        produtoId: i.produtoId,
+        nomeProduto: produto?.nome ?? '(produto removido)',
+        planejada: i.quantidadePlanejada,
+        // Já entra como comprado: você só ajusta os que não deram certo.
+        status: STATUS_ITEM.COMPRADO,
+        quantidade: i.quantidadePlanejada,
+        precoUnitario: null,
+      };
+    });
+    await banco.compras.salvar({
+      id: novoId('compra'),
+      status: 'em_andamento',
+      criadaEm: new Date().toISOString(),
+      listaId: listaId || null,
+      responsavel,
+      estabelecimento: '',
+      itens,
+    });
+    await carregarDados();
+    mostrarStatus('Compra iniciada');
+    telaCompra();
+  });
+}
+
+function cartaoItem(item, idx) {
+  const ultimo = ultimoPrecoPago(item.produtoId, estado.compras);
+  const textoUltimo = ultimo
+    ? `Último preço: ${formatarMoeda(ultimo.precoUnitario)} em ${formatarData(ultimo.data)}${
+        ultimo.estabelecimento ? ` · ${escapar(ultimo.estabelecimento)}` : ''
+      }`
+    : 'Sem compra anterior';
+  const precoTexto = item.precoUnitario == null ? '' : String(item.precoUnitario).replace('.', ',');
+  return `
+    <div class="cartao" data-idx="${idx}">
+      <div class="linha" style="justify-content:space-between">
+        <strong>${escapar(item.nomeProduto)}</strong>
+        <span style="font-size:.85rem">${item.planejada != null ? `Planejado: ${item.planejada}` : 'Extra'}</span>
+      </div>
+      <p style="font-size:.85rem;color:#555;margin:6px 0">${textoUltimo}</p>
+      <div class="linha">
+        <div>
+          <label>Quantidade</label>
+          <input type="number" min="1" step="1" inputmode="numeric" data-campo="quantidade" value="${item.quantidade ?? ''}">
+        </div>
+        <div>
+          <label>Preço unitário (R$)</label>
+          <input type="text" inputmode="decimal" data-campo="preco" value="${precoTexto}" placeholder="0,00">
+        </div>
+      </div>
+      <div class="linha" style="margin-top:8px">
+        <select data-campo="status" aria-label="Situação do item">
+          ${Object.entries(ROTULO_STATUS)
+            .map(([valor, rotulo]) => `<option value="${valor}" ${item.status === valor ? 'selected' : ''}>${rotulo}</option>`)
+            .join('')}
+        </select>
+        <strong>Subtotal: ${formatarMoeda(subtotalItem(item))}</strong>
+      </div>
+    </div>`;
+}
+
+function telaEmAndamento() {
+  const compra = estado.compraAtual;
+  const total = totalCompra(compra.itens);
+  const naCompra = new Set(compra.itens.map((i) => i.produtoId));
+  const disponiveis = estado.produtos
+    .filter((p) => p.ativo && !naCompra.has(p.id))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  tela.innerHTML = `
+    <div class="cartao">
+      <div class="linha" style="justify-content:space-between">
+        <strong>Compra de ${nomeResponsavel(compra.responsavel)}</strong>
+        <span style="font-size:.85rem">Iniciada em ${formatarData(compra.criadaEm)}</span>
+      </div>
+      <label for="estabelecimento">Estabelecimento (opcional)</label>
+      <input id="estabelecimento" maxlength="60" value="${escapar(compra.estabelecimento)}">
+      <p style="font-size:1.1rem">Total parcial: <strong>${formatarMoeda(total)}</strong></p>
+    </div>
+
+    ${compra.itens.length === 0 ? '<p class="vazio">Nenhum item. Adicione produtos abaixo.</p>' : ''}
+    ${compra.itens.map((item, idx) => cartaoItem(item, idx)).join('')}
+
+    <div class="cartao">
+      <label for="adicionar-produto">Adicionar produto que não estava na lista</label>
+      <div class="linha">
+        <select id="adicionar-produto">
+          <option value="">Escolha um produto</option>
+          ${disponiveis.map((p) => `<option value="${p.id}">${escapar(p.nome)}</option>`).join('')}
+        </select>
+        <button id="btn-adicionar" class="secundario">Adicionar</button>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <button id="btn-finalizar" class="destaque" style="width:100%">Finalizar compra</button>
+      <button id="btn-descartar" class="secundario" style="width:100%;margin-top:8px">Descartar esta compra</button>
+    </div>
+  `;
+
+  document.getElementById('estabelecimento').addEventListener('change', async (e) => {
+    compra.estabelecimento = e.target.value.trim();
+    await salvarCompraAtual();
+  });
+
+  tela.querySelectorAll('[data-idx]').forEach((cartao) => {
+    const idx = Number(cartao.dataset.idx);
+    const item = compra.itens[idx];
+
+    cartao.querySelector('[data-campo="quantidade"]').addEventListener('change', async (e) => {
+      const valor = Number(e.target.value);
+      if (!Number.isInteger(valor) || valor < 1) {
+        mostrarStatus('A quantidade deve ser um número inteiro de pelo menos 1.', true);
+        e.target.value = item.quantidade ?? '';
+        return;
+      }
+      item.quantidade = valor;
+      await salvarCompraAtual();
+      telaEmAndamento();
+    });
+
+    cartao.querySelector('[data-campo="preco"]').addEventListener('change', async (e) => {
+      const texto = e.target.value.trim();
+      if (texto === '') {
+        item.precoUnitario = null;
+      } else {
+        const valor = lerDecimal(texto);
+        if (valor === null || valor < 0) {
+          mostrarStatus('Informe um preço válido, por exemplo 6,50.', true);
+          e.target.value = item.precoUnitario == null ? '' : String(item.precoUnitario).replace('.', ',');
+          return;
+        }
+        item.precoUnitario = Math.round(valor * 100) / 100;
+      }
+      await salvarCompraAtual();
+      telaEmAndamento();
+    });
+
+    cartao.querySelector('[data-campo="status"]').addEventListener('change', async (e) => {
+      const novo = e.target.value;
+      if (novo === STATUS_ITEM.COMPRADO && item.precoUnitario == null) {
+        mostrarStatus('Informe o preço antes de marcar o item como comprado.', true);
+        e.target.value = item.status;
+        return;
+      }
+      item.status = novo;
+      await salvarCompraAtual();
+      telaEmAndamento();
+    });
+  });
+
+  document.getElementById('btn-adicionar').addEventListener('click', async () => {
+    const produtoId = document.getElementById('adicionar-produto').value;
+    if (!produtoId) return mostrarStatus('Escolha um produto para adicionar.', true);
+    const produto = estado.produtos.find((p) => p.id === produtoId);
+    compra.itens.push({
+      produtoId,
+      nomeProduto: produto.nome,
+      planejada: null,
+      status: STATUS_ITEM.PENDENTE,
+      quantidade: 1,
+      precoUnitario: null,
+    });
+    await salvarCompraAtual();
+    telaEmAndamento();
+  });
+
+  document.getElementById('btn-finalizar').addEventListener('click', () => {
+    estado.revisando = true;
+    telaCompra();
+  });
+
+  document.getElementById('btn-descartar').addEventListener('click', async () => {
+    if (!confirm('Descartar esta compra? Os itens digitados não serão salvos no histórico.')) return;
+    await banco.compras.salvar({ ...compra, status: 'descartada' });
+    await carregarDados();
+    mostrarStatus('Compra descartada');
+    telaCompra();
+  });
+}
+
+function telaRevisarCompra() {
+  const compra = estado.compraAtual;
+  const resumo = resumoCompra(compra);
+  const validacao = validarParaFinalizar(compra);
+
+  tela.innerHTML = `
+    <div class="cartao">
+      <h2>Confirmar compra</h2>
+      <p>Itens planejados: <strong>${resumo.planejados}</strong></p>
+      <p>Itens comprados: <strong>${resumo.comprados}</strong></p>
+      <p>Não encontrados ou não comprados: <strong>${
+        resumo.naoComprados.length ? escapar(resumo.naoComprados.join(', ')) : 'nenhum'
+      }</strong></p>
+      <p>Total: <strong>${formatarMoeda(resumo.total)}</strong></p>
+      <p>Estabelecimento: ${compra.estabelecimento ? escapar(compra.estabelecimento) : 'não informado'}</p>
+      <p>Data e horário: ${new Date().toLocaleString('pt-BR')}</p>
+      <p>Responsável: ${nomeResponsavel(compra.responsavel)}</p>
+      ${validacao.ok ? '' : `<div class="aviso">${validacao.erros.map(escapar).join('<br>')}</div>`}
+    </div>
+    <div class="cartao">
+      <button id="btn-confirmar" class="destaque" style="width:100%" ${validacao.ok ? '' : 'disabled'}>Confirmar e salvar no histórico</button>
+      <button id="btn-voltar" class="secundario" style="width:100%;margin-top:8px">Voltar e corrigir</button>
+    </div>
+  `;
+
+  document.getElementById('btn-voltar').addEventListener('click', () => {
+    estado.revisando = false;
+    telaCompra();
+  });
+
+  document.getElementById('btn-confirmar').addEventListener('click', async (e) => {
+    if (finalizando) return; // impede cliques repetidos registrarem a mesma compra duas vezes
+    finalizando = true;
+    e.target.disabled = true;
+    try {
+      const agora = new Date().toISOString();
+      await banco.compras.salvar({
+        ...compra,
+        status: 'finalizada',
+        finalizadaEm: agora,
+        total: resumo.total,
+      });
+      const listaUsada = compra.listaId ? estado.listas.find((l) => l.id === compra.listaId) : null;
+      if (listaUsada && listaUsada.status !== 'concluida') {
+        await banco.listas.salvar({ ...listaUsada, status: 'concluida' });
+      }
+      await carregarDados();
+      estado.revisando = false;
+      mostrarStatus('Compra finalizada e salva no histórico');
+      telaCompra();
+    } catch (err) {
+      mostrarStatus('Erro ao finalizar a compra. Nada foi perdido: tente novamente.', true);
+      e.target.disabled = false;
+      console.error(err);
+    } finally {
+      finalizando = false;
+    }
+  });
+}
+
+// ---------- Tela: Histórico ----------
+function blocoAlteracoes(c) {
+  const alteracoes = c.alteracoes ?? [];
+  const lista = alteracoes.length
+    ? alteracoes
+        .map((a) => `<li>${new Date(a.em).toLocaleString('pt-BR')} por ${nomeResponsavel(a.por)}: ${escapar(a.motivo)}</li>`)
+        .join('')
+    : '<li>Nenhuma correção.</li>';
+  return `
+    <div class="aviso" style="margin-top:8px">
+      <strong>Correções</strong>
+      <ul style="margin:6px 0 0 18px;padding:0">${lista}</ul>
+    </div>
+    <button class="secundario" data-acao="corrigir" data-id="${c.id}" style="margin-top:8px">Corrigir compra</button>`;
+}
+
+function telaCorrigirCompra() {
+  const original = estado.compras.find((c) => c.id === estado.corrigindoId);
+  if (!original) {
+    estado.corrigindoId = null;
+    return telaHistorico();
+  }
+  if (!estado.rascunhoCorrecao) {
+    estado.rascunhoCorrecao = {
+      estabelecimento: original.estabelecimento || '',
+      responsavel: original.responsavel,
+      itens: original.itens.map((i) => ({ ...i })),
+    };
+  }
+  const r = estado.rascunhoCorrecao;
+
+  tela.innerHTML = `
+    <div class="cartao">
+      <h2>Corrigir compra de ${formatarData(diaLocal(original.finalizadaEm))}</h2>
+      <p style="font-size:.9rem;color:#555">A compra original fica registrada, e a correção aparece no histórico com o motivo.</p>
+      <label for="c-mercado">Estabelecimento</label>
+      <input id="c-mercado" maxlength="60" value="${escapar(r.estabelecimento)}">
+      <label for="c-resp">Quem comprou</label>
+      <select id="c-resp">
+        <option value="eu" ${r.responsavel === 'eu' ? 'selected' : ''}>${NOME_EU}</option>
+        <option value="viviane" ${r.responsavel === 'viviane' ? 'selected' : ''}>Viviane</option>
+      </select>
+    </div>
+
+    <div class="cartao">
+      <h2>Itens</h2>
+      ${r.itens
+        .map(
+          (i, idx) => `
+        <div class="item-produto" style="flex-direction:column;align-items:stretch">
+          <strong>${escapar(i.nomeProduto)}</strong>
+          <div class="linha">
+            <div><label>Quantidade</label><input type="number" min="1" step="1" inputmode="numeric" data-idx="${idx}" data-campo="quantidade" value="${i.quantidade ?? ''}"></div>
+            <div><label>Preço unitário (R$)</label><input type="text" inputmode="decimal" data-idx="${idx}" data-campo="preco" value="${i.precoUnitario == null ? '' : String(i.precoUnitario).replace('.', ',')}"></div>
+          </div>
+          <select data-idx="${idx}" data-campo="status" aria-label="Situação do item">
+            ${Object.entries(ROTULO_STATUS)
+              .map(([valor, rotulo]) => `<option value="${valor}" ${i.status === valor ? 'selected' : ''}>${rotulo}</option>`)
+              .join('')}
+          </select>
+        </div>`,
+        )
+        .join('')}
+    </div>
+
+    <div class="cartao">
+      <label for="c-motivo">Motivo da correção (obrigatório)</label>
+      <textarea id="c-motivo" rows="3" style="width:100%;border:1px solid var(--borda);border-radius:10px;padding:10px;font:inherit"></textarea>
+      <p style="margin-top:10px">Total corrigido: <strong>${formatarMoeda(totalCompra(r.itens))}</strong></p>
+      <button id="c-salvar" class="destaque" style="width:100%">Salvar correção</button>
+      <button id="c-cancelar" class="secundario" style="width:100%;margin-top:8px">Cancelar</button>
+    </div>
+  `;
+
+  document.getElementById('c-mercado').addEventListener('change', (e) => {
+    r.estabelecimento = e.target.value.trim();
+  });
+  document.getElementById('c-resp').addEventListener('change', (e) => {
+    r.responsavel = e.target.value;
+  });
+
+  tela.querySelectorAll('[data-idx]').forEach((campo) => {
+    campo.addEventListener('change', () => {
+      const item = r.itens[Number(campo.dataset.idx)];
+      const tipo = campo.dataset.campo;
+      if (tipo === 'quantidade') {
+        const v = Number(campo.value);
+        if (!Number.isInteger(v) || v < 1) {
+          mostrarStatus('A quantidade deve ser um número inteiro de pelo menos 1.', true);
+          campo.value = item.quantidade ?? '';
+          return;
+        }
+        item.quantidade = v;
+      } else if (tipo === 'preco') {
+        const texto = campo.value.trim();
+        const v = texto === '' ? null : lerDecimal(texto);
+        if (texto !== '' && (v === null || v < 0)) {
+          mostrarStatus('Informe um preço válido, por exemplo 6,50.', true);
+          campo.value = item.precoUnitario == null ? '' : String(item.precoUnitario).replace('.', ',');
+          return;
+        }
+        item.precoUnitario = v === null ? null : Math.round(v * 100) / 100;
+      } else if (tipo === 'status') {
+        if (campo.value === STATUS_ITEM.COMPRADO && item.precoUnitario == null) {
+          mostrarStatus('Informe o preço antes de marcar o item como comprado.', true);
+          campo.value = item.status;
+          return;
+        }
+        item.status = campo.value;
+      }
+      telaCorrigirCompra();
+    });
+  });
+
+  document.getElementById('c-cancelar').addEventListener('click', () => {
+    estado.corrigindoId = null;
+    estado.rascunhoCorrecao = null;
+    telaHistorico();
+  });
+
+  document.getElementById('c-salvar').addEventListener('click', async (e) => {
+    if (salvandoCorrecao) return;
+    salvandoCorrecao = true;
+    e.target.disabled = true;
+    try {
+      const motivo = document.getElementById('c-motivo').value;
+      const autor = localStorage.getItem('responsavel') || 'eu';
+      const resultado = aplicarCorrecao(original, {
+        estabelecimento: r.estabelecimento,
+        responsavel: r.responsavel,
+        itens: r.itens,
+      }, { motivo, autor, agoraIso: new Date().toISOString() });
+      if (!resultado.ok) {
+        mostrarStatus(resultado.erros[0], true);
+        return;
+      }
+      const validacao = validarParaFinalizar(resultado.compra);
+      if (!validacao.ok) {
+        mostrarStatus(validacao.erros[0], true);
+        return;
+      }
+      await banco.compras.salvar(resultado.compra);
+      await carregarDados();
+      estado.corrigindoId = null;
+      estado.rascunhoCorrecao = null;
+      mostrarStatus('Correção salva. A compra original continua registrada no histórico.');
+      telaHistorico();
+    } catch (err) {
+      mostrarStatus('Erro ao salvar a correção. Nada foi alterado: tente novamente.', true);
+      console.error(err);
+    } finally {
+      salvandoCorrecao = false;
+      e.target.disabled = false;
+    }
+  });
+}
+
+let salvandoCorrecao = false;
+
+function telaHistorico() {
+  if (estado.corrigindoId) return telaCorrigirCompra();
+  const f = estado.filtrosHist;
+  const compras = filtrarCompras(estado.compras, f);
+  const mercados = estabelecimentosUsados(estado.compras);
+  const produtosOrdenados = [...estado.produtos].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const campoSelecionado = (valor, atual) => (valor === atual ? 'selected' : '');
+
+  let blocoProduto = '';
+  if (f.produtoId) {
+    const produto = estado.produtos.find((p) => p.id === f.produtoId);
+    const registros = historicoDoProduto(f.produtoId, estado.compras).reverse();
+    blocoProduto = `
+      <div class="cartao">
+        <h2>Preços de ${escapar(produto?.nome ?? '')}</h2>
+        ${linhaSvg(
+          historicoDoProduto(f.produtoId, estado.compras).map((r) => ({
+            x: formatarData(diaLocal(r.data)).slice(0, 5),
+            y: r.precoUnitario,
+          })),
+        )}
+        ${
+          registros.length === 0
+            ? '<p class="vazio">Este produto ainda não foi comprado.</p>'
+            : registros
+                .map((r) => {
+                  const variacao =
+                    r.variacao == null
+                      ? 'primeira compra'
+                      : `${r.variacao > 0 ? 'aumento' : r.variacao < 0 ? 'redução' : 'estável'} de ${Math.abs(r.variacao).toFixed(2).replace('.', ',')}%`;
+                  return `
+            <div class="item-produto" style="flex-direction:column;align-items:flex-start">
+              <span><strong>${formatarMoeda(r.precoUnitario)}</strong> por unidade · ${formatarData(diaLocal(r.data))}${
+                    r.estabelecimento ? ` · ${escapar(r.estabelecimento)}` : ''
+                  }</span>
+              <span style="font-size:.85rem;color:#555">Quantidade: ${r.quantidade} · ${variacao}</span>
+            </div>`;
+                })
+                .join('')
+        }
+      </div>`;
+  }
+
+  tela.innerHTML = `
+    <div class="cartao">
+      <h2>Filtrar compras</h2>
+      <div class="linha">
+        <div><label for="f-ini">De</label><input type="date" id="f-ini" value="${f.dataInicial}"></div>
+        <div><label for="f-fim">Até</label><input type="date" id="f-fim" value="${f.dataFinal}"></div>
+      </div>
+      <label for="f-mercado">Estabelecimento</label>
+      <select id="f-mercado">
+        <option value="">Todos</option>
+        ${mercados.map((m) => `<option value="${escapar(m)}" ${campoSelecionado(m, f.estabelecimento)}>${escapar(m)}</option>`).join('')}
+      </select>
+      <label for="f-resp">Quem comprou</label>
+      <select id="f-resp">
+        <option value="">Ambos</option>
+        <option value="eu" ${campoSelecionado('eu', f.responsavel)}>${NOME_EU}</option>
+        <option value="viviane" ${campoSelecionado('viviane', f.responsavel)}>Viviane</option>
+      </select>
+      <label for="f-produto">Produto</label>
+      <select id="f-produto">
+        <option value="">Todos</option>
+        ${produtosOrdenados.map((p) => `<option value="${p.id}" ${campoSelecionado(p.id, f.produtoId)}>${escapar(p.nome)}</option>`).join('')}
+      </select>
+      <div class="linha" style="margin-top:12px">
+        <button id="f-limpar" class="secundario">Limpar filtros</button>
+      </div>
+    </div>
+
+    ${blocoProduto}
+
+    <h2>${compras.length} compra(s) encontrada(s)</h2>
+    ${compras.length === 0 ? '<p class="vazio">Nenhuma compra com estes filtros.</p>' : ''}
+    ${compras
+      .map((c) => {
+        const aberta = estado.compraAbertaId === c.id;
+        const hora = new Date(c.finalizadaEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const comprados = c.itens.filter((i) => i.status === STATUS_ITEM.COMPRADO);
+        return `
+      <div class="cartao">
+        <div class="linha" style="justify-content:space-between">
+          <strong>${formatarData(diaLocal(c.finalizadaEm))} às ${hora}</strong>
+          <strong>${formatarMoeda(c.total)}</strong>
+        </div>
+        <p style="font-size:.9rem;color:#555;margin:6px 0">
+          ${escapar(c.estabelecimento || 'Sem estabelecimento')} · ${nomeResponsavel(c.responsavel)} · ${comprados.length} item(ns)
+        </p>
+        <button class="secundario" data-acao="abrir-compra" data-id="${c.id}">${aberta ? 'Fechar' : 'Ver itens'}</button>
+        ${aberta ? blocoAlteracoes(c) : ''}
+        ${
+          aberta
+            ? `<div style="margin-top:10px">
+                ${comprados
+                  .map(
+                    (i) => `
+                  <div class="item-produto">
+                    <span class="nome">${escapar(i.nomeProduto)}<br><small>${i.quantidade} × ${formatarMoeda(i.precoUnitario)}</small></span>
+                    <strong>${formatarMoeda(subtotalItem(i))}</strong>
+                  </div>`,
+                  )
+                  .join('')}
+                ${
+                  c.itens.some((i) => i.status !== STATUS_ITEM.COMPRADO)
+                    ? `<p style="font-size:.85rem;color:#555">Não comprados: ${escapar(
+                        c.itens
+                          .filter((i) => i.status !== STATUS_ITEM.COMPRADO)
+                          .map((i) => `${i.nomeProduto} (${ROTULO_STATUS[i.status]?.toLowerCase() ?? ''})`)
+                          .join(', '),
+                      )}</p>`
+                    : ''
+                }
+              </div>`
+            : ''
+        }
+      </div>`;
+      })
+      .join('')}
+  `;
+
+  const atualizar = (chave) => (e) => {
+    estado.filtrosHist[chave] = e.target.value;
+    telaHistorico();
+  };
+  document.getElementById('f-ini').addEventListener('change', atualizar('dataInicial'));
+  document.getElementById('f-fim').addEventListener('change', atualizar('dataFinal'));
+  document.getElementById('f-mercado').addEventListener('change', atualizar('estabelecimento'));
+  document.getElementById('f-resp').addEventListener('change', atualizar('responsavel'));
+  document.getElementById('f-produto').addEventListener('change', atualizar('produtoId'));
+  document.getElementById('f-limpar').addEventListener('click', () => {
+    estado.filtrosHist = { dataInicial: '', dataFinal: '', estabelecimento: '', responsavel: '', produtoId: '' };
+    telaHistorico();
+  });
+
+  tela.querySelectorAll('[data-acao="abrir-compra"]').forEach((botao) => {
+    botao.addEventListener('click', () => {
+      estado.compraAbertaId = estado.compraAbertaId === botao.dataset.id ? null : botao.dataset.id;
+      telaHistorico();
+    });
+  });
+
+  tela.querySelectorAll('[data-acao="corrigir"]').forEach((botao) => {
+    botao.addEventListener('click', () => {
+      estado.corrigindoId = botao.dataset.id;
+      estado.rascunhoCorrecao = null;
+      telaHistorico();
+    });
+  });
+}
+
+// ---------- Tela: Relatórios ----------
+const FILTROS_REL_VAZIOS = { dataInicial: '', dataFinal: '', estabelecimento: '', responsavel: '', categoriaId: '' };
+
+function hojeIso() {
+  return diaLocal(new Date().toISOString());
+}
+
+function barra(percentual) {
+  const largura = Math.max(0, Math.min(100, percentual));
+  return `<div class="barra"><div style="width:${largura}%"></div></div>`;
+}
+
+function telaRelatorios() {
+  const f = estado.filtrosRel;
+  const filtrosBase = { estabelecimento: f.estabelecimento, responsavel: f.responsavel, categoriaId: f.categoriaId };
+  const linhas = itensFiltrados(estado.compras, estado.produtos, { ...filtrosBase, dataInicial: f.dataInicial, dataFinal: f.dataFinal });
+  const resumo = resumoGastos(linhas);
+
+  // Comparação com o período anterior de mesmo tamanho (só quando há período completo).
+  const anterior = periodoAnterior(f.dataInicial, f.dataFinal);
+  let comparacao = '';
+  if (anterior) {
+    const linhasAnt = itensFiltrados(estado.compras, estado.produtos, { ...filtrosBase, ...anterior });
+    const totalAnt = resumoGastos(linhasAnt).total;
+    const variacao = variacaoPercentual(totalAnt, resumo.total);
+    comparacao = variacao === null
+      ? '<p style="font-size:.9rem;color:#555">Sem gastos no período anterior para comparar.</p>'
+      : `<p style="font-size:.9rem;color:#555">${variacao > 0 ? 'Subiu' : variacao < 0 ? 'Caiu' : 'Ficou igual'} ${Math.abs(variacao).toFixed(2).replace('.', ',')}% em relação ao período anterior (${formatarMoeda(totalAnt)}).</p>`;
+  }
+
+  const porCategoria = gastosPor(linhas, (l) => l.categoriaId ?? 'sem', (l) => {
+    const cat = estado.categorias.find((c) => c.id === l.categoriaId);
+    return cat?.nome ?? 'Sem categoria';
+  });
+  const porMercado = gastosPor(linhas, (l) => l.estabelecimento, (l) => l.estabelecimento);
+  const porProduto = gastosPor(linhas, (l) => l.produtoId, (l) => l.nome).slice(0, 10);
+  const variacoes = maioresVariacoes(filtrarCompras(estado.compras, { dataInicial: f.dataInicial, dataFinal: f.dataFinal, estabelecimento: f.estabelecimento, responsavel: f.responsavel }));
+
+  const blocoGrupo = (titulo, grupos) => `
+    <div class="cartao">
+      <h2>${titulo}</h2>
+      ${grupos.length === 0 ? '<p class="vazio">Sem dados neste filtro.</p>' : ''}
+      ${grupos
+        .map(
+          (g) => `
+        <div style="margin:8px 0">
+          <div class="linha" style="justify-content:space-between;font-size:.9rem">
+            <span>${escapar(g.rotulo)}</span>
+            <strong>${formatarMoeda(g.total)} (${g.participacao.toFixed(1).replace('.', ',')}%)</strong>
+          </div>
+          ${barra(g.participacao)}
+        </div>`,
+        )
+        .join('')}
+    </div>`;
+
+  const blocoVariacao = (titulo, lista) => `
+    <div class="cartao">
+      <h2>${titulo}</h2>
+      ${lista.length === 0 ? '<p class="vazio">Nenhum produto com duas ou mais compras neste filtro.</p>' : ''}
+      ${lista
+        .slice(0, 5)
+        .map((v) => {
+          const nome = estado.produtos.find((p) => p.id === v.produtoId)?.nome ?? '(produto removido)';
+          return `
+          <div class="item-produto">
+            <span class="nome">${escapar(nome)}<br><small>${formatarMoeda(v.precoAnterior)} → ${formatarMoeda(v.precoAtual)}</small></span>
+            <strong>${v.variacao > 0 ? '+' : ''}${v.variacao.toFixed(2).replace('.', ',')}%</strong>
+          </div>`;
+        })
+        .join('')}
+    </div>`;
+
+  const botoesRapidos = [
+    ['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['90', '90 dias'], ['365', '365 dias'], ['mes', 'Mês atual'],
+  ]
+    .map(([tipo, rotulo]) => `<button class="secundario" data-rapido="${tipo}">${rotulo}</button>`)
+    .join(' ');
+
+  const mercados = estabelecimentosUsados(estado.compras);
+  const categorias = [...estado.categorias].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  tela.innerHTML = `
+    <div class="cartao">
+      <h2>Filtros</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${botoesRapidos}</div>
+      <div class="linha" style="margin-top:10px">
+        <div><label for="r-ini">De</label><input type="date" id="r-ini" value="${f.dataInicial}"></div>
+        <div><label for="r-fim">Até</label><input type="date" id="r-fim" value="${f.dataFinal}"></div>
+      </div>
+      <label for="r-mercado">Estabelecimento</label>
+      <select id="r-mercado">
+        <option value="">Todos</option>
+        ${mercados.map((m) => `<option value="${escapar(m)}" ${m === f.estabelecimento ? 'selected' : ''}>${escapar(m)}</option>`).join('')}
+      </select>
+      <label for="r-resp">Quem comprou</label>
+      <select id="r-resp">
+        <option value="">Ambos</option>
+        <option value="eu" ${f.responsavel === 'eu' ? 'selected' : ''}>${NOME_EU}</option>
+        <option value="viviane" ${f.responsavel === 'viviane' ? 'selected' : ''}>Viviane</option>
+      </select>
+      <label for="r-cat">Categoria</label>
+      <select id="r-cat">
+        <option value="">Todas</option>
+        ${categorias.map((c) => `<option value="${c.id}" ${c.id === f.categoriaId ? 'selected' : ''}>${escapar(c.nome)}</option>`).join('')}
+      </select>
+      <label for="r-ordem">Ordenar listas por</label>
+      <select id="r-ordem">
+        <option value="valor" ${estado.ordenacaoRel === 'valor' ? 'selected' : ''}>Valor gasto</option>
+        <option value="quantidade" ${estado.ordenacaoRel === 'quantidade' ? 'selected' : ''}>Quantidade de itens</option>
+        <option value="nome" ${estado.ordenacaoRel === 'nome' ? 'selected' : ''}>Nome</option>
+      </select>
+      <div class="linha" style="margin-top:12px">
+        <button id="r-limpar" class="secundario">Limpar filtros</button>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <h2>Resumo</h2>
+      <p style="font-size:1.2rem">Total gasto: <strong>${formatarMoeda(resumo.total)}</strong></p>
+      <p>Compras: <strong>${resumo.compras}</strong> · Média por compra: <strong>${formatarMoeda(resumo.mediaPorCompra)}</strong></p>
+      ${comparacao}
+    </div>
+
+    ${blocoGrupo('Gastos por categoria', ordenarGrupos(porCategoria, estado.ordenacaoRel))}
+    ${blocoGrupo('Gastos por mercado', ordenarGrupos(porMercado, estado.ordenacaoRel))}
+    ${blocoGrupo('Produtos que mais pesaram (top 10)', ordenarGrupos(porProduto, estado.ordenacaoRel))}
+    ${blocoVariacao('Maiores aumentos de preço', variacoes.aumentos)}
+    ${blocoVariacao('Maiores reduções de preço', variacoes.reducoes)}
+  `;
+
+  tela.querySelectorAll('[data-rapido]').forEach((botao) => {
+    botao.addEventListener('click', () => {
+      Object.assign(estado.filtrosRel, periodoRapido(botao.dataset.rapido, hojeIso()));
+      telaRelatorios();
+    });
+  });
+
+  const atualizar = (chave) => (e) => {
+    estado.filtrosRel[chave] = e.target.value;
+    telaRelatorios();
+  };
+  document.getElementById('r-ini').addEventListener('change', atualizar('dataInicial'));
+  document.getElementById('r-fim').addEventListener('change', atualizar('dataFinal'));
+  document.getElementById('r-mercado').addEventListener('change', atualizar('estabelecimento'));
+  document.getElementById('r-resp').addEventListener('change', atualizar('responsavel'));
+  document.getElementById('r-cat').addEventListener('change', atualizar('categoriaId'));
+  document.getElementById('r-limpar').addEventListener('click', () => {
+    estado.filtrosRel = { ...FILTROS_REL_VAZIOS };
+    telaRelatorios();
+  });
+  document.getElementById('r-ordem').addEventListener('change', (e) => {
+    estado.ordenacaoRel = e.target.value;
+    telaRelatorios();
+  });
+}
+
+// ---------- Tela: Configurações e backups ----------
+function baixarArquivo(nome, conteudo, tipo) {
+  const url = URL.createObjectURL(new Blob([conteudo], { type: tipo }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function dadosAtuais() {
+  return {
+    categorias: estado.categorias,
+    produtos: estado.produtos,
+    listas: estado.listas,
+    compras: estado.compras,
+  };
+}
+
+function telaConfig() {
+  const resp = localStorage.getItem('responsavel') || 'eu';
+  const imp = estado.importacao;
+
+  let blocoImportacao = '';
+  if (imp) {
+    if (!imp.validacao.ok) {
+      blocoImportacao = `<div class="aviso">Arquivo não pode ser importado:<br>${imp.validacao.erros.map(escapar).join('<br>')}</div>
+        <button id="imp-cancelar" class="secundario" style="margin-top:8px">Cancelar</button>`;
+    } else {
+      const c = imp.validacao.contagem;
+      const novos = imp.planos;
+      blocoImportacao = `
+        <p>Arquivo válido. Ele contém ${c.categorias} categoria(s), ${c.produtos} produto(s), ${c.listas} lista(s) e ${c.compras} compra(s).</p>
+        <p>Pela mesclagem, serão adicionados: ${novos.categorias.length} categoria(s), ${novos.produtos.length} produto(s), ${novos.listas.length} lista(s) e ${novos.compras.length} compra(s). Nada que já existe será alterado ou apagado.</p>
+        ${imp.suspeitos.length ? `<div class="aviso">Possíveis duplicidades (não serão importadas):<br>${imp.suspeitos.map(escapar).join('<br>')}</div>` : ''}
+        <div class="linha" style="margin-top:12px">
+          <button id="imp-mesclar" class="destaque">Mesclar (adicionar só o que é novo)</button>
+          <button id="imp-cancelar" class="secundario">Cancelar</button>
+        </div>
+        <div class="aviso" style="margin-top:12px">
+          <strong>Substituir tudo</strong> apaga os dados deste celular e coloca o conteúdo do arquivo no lugar. Para confirmar, digite SUBSTITUIR:
+          <input id="imp-confirma" placeholder="SUBSTITUIR" style="margin-top:6px">
+          <button id="imp-substituir" class="secundario" style="margin-top:8px;width:100%">Substituir tudo</button>
+        </div>`;
+    }
+  }
+
+  tela.innerHTML = `
+    <div class="cartao">
+      <h2>Quem usa este celular</h2>
+      <p style="font-size:.8rem;color:#777">Versão do app: ${VERSAO_APP}</p>
+      <label for="cfg-resp">Responsável padrão nas novas compras</label>
+      <select id="cfg-resp">
+        <option value="eu" ${resp === 'eu' ? 'selected' : ''}>${NOME_EU}</option>
+        <option value="viviane" ${resp === 'viviane' ? 'selected' : ''}>Viviane</option>
+      </select>
+    </div>
+
+    <div class="cartao">
+      <h2>Este celular é de</h2>
+      <p style="font-size:.9rem;color:#555">Cada celular grava um arquivo próprio no Google Drive, com o nome da pessoa.</p>
+      <select id="cfg-dono">
+        <option value="eu" ${donoDesteCelular() === 'eu' ? 'selected' : ''}>${NOME_EU}</option>
+        <option value="viviane" ${donoDesteCelular() === 'viviane' ? 'selected' : ''}>Viviane</option>
+      </select>
+    </div>
+
+    <div class="cartao">
+      <h2>Sincronização com o Google Drive</h2>
+      ${
+        driveConfigurado()
+          ? `<p style="font-size:.9rem;color:#555">Última sincronização: ${localStorage.getItem('ultimaSync') ? new Date(localStorage.getItem('ultimaSync')).toLocaleString('pt-BR') : 'nunca'}</p>
+             <div class="linha"><button id="drive-conectar" class="secundario">Conectar ao Google Drive</button><button id="drive-sync" class="destaque">Sincronizar agora</button></div>`
+          : `<div class="aviso">Esta versão é local: os dados ficam só neste celular. Para levar os dados ao celular da Viviane, use "Baixar backup" aqui e "Importar backup" lá.</div>`
+      }
+    </div>
+
+    <div class="cartao">
+      <h2>Exportar backup</h2>
+      <p style="font-size:.9rem;color:#555">Gera um arquivo com todos os produtos, categorias, listas e compras. Guarde-o no Google Drive.</p>
+      <button id="exp-backup" class="destaque" style="width:100%">Baixar backup (JSON)</button>
+    </div>
+
+    <div class="cartao">
+      <h2>Exportar compras para planilha</h2>
+      <p style="font-size:.9rem;color:#555">Gera um arquivo CSV com um item por linha, para abrir no Excel ou no Planilhas Google.</p>
+      <button id="exp-csv" class="secundario" style="width:100%">Baixar compras (CSV)</button>
+    </div>
+
+    <div class="cartao">
+      <h2>Importar backup</h2>
+      <p style="font-size:.9rem;color:#555">Escolha um arquivo de backup. Antes de qualquer alteração, você verá o que será feito.</p>
+      <input type="file" id="imp-arquivo" accept=".json,application/json">
+      ${blocoImportacao}
+    </div>
+  `;
+
+  document.getElementById('cfg-dono').addEventListener('change', (e) => {
+    localStorage.setItem('dono', e.target.value);
+    mostrarStatus('Arquivo deste celular atualizado');
+  });
+
+  document.getElementById('drive-conectar')?.addEventListener('click', async () => {
+    try {
+      await conectarDrive();
+      mostrarStatus('Conectado ao Google Drive');
+    } catch (err) {
+      mostrarStatus(err.message, true);
+    }
+  });
+
+  document.getElementById('drive-sync')?.addEventListener('click', async () => {
+    try {
+      mostrarStatus('Sincronizando...');
+      const dono = donoDesteCelular();
+      const outro = dono === 'eu' ? 'viviane' : 'eu';
+      const { dados, conflitos } = await sincronizar(dadosAtuais(), dono, outro);
+      await banco.gravarLotes(dados);
+      await carregarDados();
+      localStorage.setItem('ultimaSync', new Date().toISOString());
+      const n = Object.values(conflitos).flat().length;
+      mostrarStatus(`Sincronizado${n ? ` (${n} conflito(s): ficou a alteração mais recente)` : ''}`);
+      telaConfig();
+    } catch (err) {
+      mostrarStatus(err.message, true);
+    }
+  });
+
+  document.getElementById('cfg-resp').addEventListener('change', (e) => {
+    localStorage.setItem('responsavel', e.target.value);
+    mostrarStatus('Responsável padrão atualizado');
+  });
+
+  document.getElementById('exp-backup').addEventListener('click', () => {
+    const agora = new Date().toISOString();
+    const conteudo = JSON.stringify(montarBackup(dadosAtuais(), agora), null, 2);
+    baixarArquivo(`compras-da-casa-${diaLocal(agora)}.json`, conteudo, 'application/json');
+    mostrarStatus('Backup gerado. Guarde o arquivo no Google Drive.');
+  });
+
+  document.getElementById('exp-csv').addEventListener('click', () => {
+    const agora = new Date().toISOString();
+    baixarArquivo(`compras-da-casa-${diaLocal(agora)}.csv`, csvItens(estado.compras, estado.produtos), 'text/csv;charset=utf-8');
+    mostrarStatus('Planilha de compras gerada');
+  });
+
+  document.getElementById('imp-arquivo').addEventListener('change', async (e) => {
+    const arquivo = e.target.files[0];
+    if (!arquivo) return;
+    try {
+      const obj = JSON.parse(await arquivo.text());
+      const validacao = validarBackup(obj);
+      if (!validacao.ok) {
+        estado.importacao = { validacao };
+      } else {
+        const { planos, suspeitos } = planejarMescla(dadosAtuais(), obj);
+        estado.importacao = { backup: obj, validacao, planos, suspeitos };
+      }
+    } catch {
+      estado.importacao = { validacao: { ok: false, erros: ['Não foi possível ler o arquivo. Ele não é um JSON válido.'] } };
+    }
+    telaConfig();
+  });
+
+  document.getElementById('imp-cancelar')?.addEventListener('click', () => {
+    estado.importacao = null;
+    telaConfig();
+  });
+
+  document.getElementById('imp-mesclar')?.addEventListener('click', async () => {
+    const p = estado.importacao.planos;
+    try {
+      await banco.gravarLotes(p);
+      await carregarDados();
+      estado.importacao = null;
+      mostrarStatus('Mesclagem concluída. Nenhum dado existente foi alterado.');
+      telaConfig();
+    } catch (err) {
+      mostrarStatus('Erro na mesclagem. Nada foi alterado: tente novamente.', true);
+      console.error(err);
+    }
+  });
+
+  document.getElementById('imp-substituir')?.addEventListener('click', async () => {
+    const confirmacao = document.getElementById('imp-confirma').value.trim();
+    if (confirmacao !== 'SUBSTITUIR') {
+      return mostrarStatus('Digite SUBSTITUIR exatamente para confirmar.', true);
+    }
+    try {
+      await banco.gravarLotes(estado.importacao.backup.dados, { substituir: true });
+      await carregarDados();
+      estado.importacao = null;
+      mostrarStatus('Dados substituídos pelo backup.');
+      telaConfig();
+    } catch (err) {
+      mostrarStatus('Erro ao substituir os dados. Os dados anteriores podem ter sido mantidos: confira antes de continuar.', true);
+      console.error(err);
+    }
+  });
+}
+
+// ---------- Telas ainda não construídas ----------
+function telaEmConstrucao(nome) {
+  tela.innerHTML = `<div class="cartao"><p>${nome} ainda não está pronta. Será construída na próxima etapa.</p></div>`;
+}
+
+const telas = {
+  inicio: telaInicio,
+  produtos: telaProdutos,
+  preparar: telaPreparar,
+  compra: telaCompra,
+  historico: telaHistorico,
+  relatorios: telaRelatorios,
+  config: telaConfig,
+};
+
+function irPara(nome) {
+  estado.telaAtual = nome;
+  botoes.forEach((b) => b.classList.toggle('ativa', b.dataset.tela === nome));
+  telas[nome]();
+  window.scrollTo(0, 0);
+}
+
+botoes.forEach((b) => b.addEventListener('click', () => irPara(b.dataset.tela)));
+
+// Navegação por deslize: arrastar a tela para a esquerda avança; para a direita, volta.
+const ORDEM_TELAS = ['inicio', 'preparar', 'compra', 'historico', 'produtos', 'relatorios', 'config'];
+let toqueX = null;
+let toqueY = null;
+document.addEventListener('touchstart', (e) => {
+  toqueX = e.touches[0].clientX;
+  toqueY = e.touches[0].clientY;
+}, { passive: true });
+document.addEventListener('touchend', (e) => {
+  if (toqueX === null) return;
+  const dx = e.changedTouches[0].clientX - toqueX;
+  const dy = e.changedTouches[0].clientY - toqueY;
+  toqueX = null;
+  // Só conta como deslize se for horizontal, longo o bastante e não for rolagem vertical.
+  if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  const i = ORDEM_TELAS.indexOf(estado.telaAtual);
+  const proxima = dx < 0 ? i + 1 : i - 1;
+  if (proxima >= 0 && proxima < ORDEM_TELAS.length) irPara(ORDEM_TELAS[proxima]);
+}, { passive: true });
+
+
+async function iniciar() {
+  try {
+    await carregarDados();
+    await garantirCadastroInicial();
+    mostrarStatus('Salvo neste celular');
+    irPara('inicio');
+  } catch (err) {
+    mostrarStatus('Não foi possível abrir o banco de dados deste navegador.', true);
+    console.error(err);
+  }
+}
+
+iniciar();
+
+// Service worker: permite abrir o app sem internet e instalar na tela inicial.
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('Service worker não registrado:', err));
+}
+
+return {};
+})();
+</script>
 </body>
 </html>
