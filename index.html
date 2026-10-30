@@ -169,7 +169,7 @@ const NOME_EU = 'Leonardo';
 
 // Versão do app. Melhorias pequenas: 1.2, 1.3... Mudanças grandes: 2.0, 3.0...
 // Histórico completo em CHANGELOG.md.
-const VERSAO_APP = '1.8';
+const VERSAO_APP = '1.9';
 
 return { GOOGLE_CLIENT_ID, NOME_PASTA_DRIVE, ESCOPO_DRIVE, NOME_EU, VERSAO_APP };
 })();
@@ -1076,6 +1076,29 @@ async function conectar() {
   });
 }
 
+/**
+ * Renova a permissão sem mostrar tela de login (quando o Google já conhece o aparelho).
+ * Lança erro se não for possível; nesse caso o usuário toca em "Sincronizar agora".
+ */
+async function garantirConexao() {
+  if (token) return true;
+  if (!driveConfigurado()) throw new Error('Drive não configurado.');
+  await carregarGis();
+  return new Promise((resolve, reject) => {
+    const cliente = window.google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: ESCOPO_DRIVE,
+      callback: (resp) => {
+        if (resp.error) return reject(new Error(resp.error));
+        token = resp.access_token;
+        resolve(true);
+      },
+      error_callback: (erro) => reject(new Error(erro?.type ?? 'sem_permissao_silenciosa')),
+    });
+    cliente.requestAccessToken({ prompt: 'none' });
+  });
+}
+
 async function chamar(url, opcoes = {}) {
   if (!token) throw new Error('Conecte-se ao Google Drive primeiro.');
   const resp = await fetch(url, {
@@ -1150,7 +1173,7 @@ async function sincronizar(dadosLocais, donoDesteCelular, nomeOutro) {
   return { dados, conflitos };
 }
 
-return { driveConfigurado, conectar, sincronizar };
+return { driveConfigurado, conectar, garantirConexao, sincronizar };
 })();
 
 const M_app = (() => {
@@ -1159,7 +1182,7 @@ const { novoId } = M_banco;
 // Dados iniciais embutidos no código: o app não depende de arquivos externos nem de servidor.
 const seed = {"versao_cadastro":1,"observacao":"Lista inicial enviada pelo usuário em 29/10/2026. Unidade, apresentação e marca ficam vazias até serem preenchidas no app; nenhum preço ou histórico foi inventado.","categorias":["Mercearia e alimentos básicos","Leites, frios e laticínios","Pães e acompanhamentos","Carnes e proteínas","Limpeza da casa","Higiene pessoal"],"produtos":[{"nome":"Arroz","categoria":"Mercearia e alimentos básicos"},{"nome":"Macarrão","categoria":"Mercearia e alimentos básicos"},{"nome":"Sal","categoria":"Mercearia e alimentos básicos"},{"nome":"Açúcar","categoria":"Mercearia e alimentos básicos"},{"nome":"Café","categoria":"Mercearia e alimentos básicos"},{"nome":"Flocão","categoria":"Mercearia e alimentos básicos"},{"nome":"Tapioca","categoria":"Mercearia e alimentos básicos"},{"nome":"Milho verde","categoria":"Mercearia e alimentos básicos"},{"nome":"Molho de tomate","categoria":"Mercearia e alimentos básicos"},{"nome":"Colorau","categoria":"Mercearia e alimentos básicos"},{"nome":"Pimenta","categoria":"Mercearia e alimentos básicos"},{"nome":"Vinagre","categoria":"Mercearia e alimentos básicos"},{"nome":"Azeite","categoria":"Mercearia e alimentos básicos"},{"nome":"Shoyu","categoria":"Mercearia e alimentos básicos"},{"nome":"Lemon pepper","categoria":"Mercearia e alimentos básicos"},{"nome":"Leite","categoria":"Leites, frios e laticínios"},{"nome":"Leite em pó pequeno","categoria":"Leites, frios e laticínios"},{"nome":"Leite em pó grande","categoria":"Leites, frios e laticínios"},{"nome":"Leite de coco","categoria":"Leites, frios e laticínios"},{"nome":"Iogurte","categoria":"Leites, frios e laticínios"},{"nome":"Requeijão","categoria":"Leites, frios e laticínios"},{"nome":"Queijo","categoria":"Leites, frios e laticínios"},{"nome":"Presunto","categoria":"Leites, frios e laticínios"},{"nome":"Creme de leite","categoria":"Leites, frios e laticínios"},{"nome":"Margarina","categoria":"Leites, frios e laticínios"},{"nome":"Manteiga","categoria":"Leites, frios e laticínios"},{"nome":"Pão","categoria":"Pães e acompanhamentos"},{"nome":"Pão de queijo","categoria":"Pães e acompanhamentos"},{"nome":"Torrada","categoria":"Pães e acompanhamentos"},{"nome":"Ovos","categoria":"Pães e acompanhamentos"},{"nome":"Adoçante","categoria":"Pães e acompanhamentos"},{"nome":"Tilápia","categoria":"Carnes e proteínas"},{"nome":"Carne bovina","categoria":"Carnes e proteínas"},{"nome":"Carne suína","categoria":"Carnes e proteínas"},{"nome":"Linguiça","categoria":"Carnes e proteínas"},{"nome":"Sobrecoxa de frango","categoria":"Carnes e proteínas"},{"nome":"Filé de frango","categoria":"Carnes e proteínas"},{"nome":"Nuggets","categoria":"Carnes e proteínas"},{"nome":"Hambúrguer","categoria":"Carnes e proteínas"},{"nome":"Atum","categoria":"Carnes e proteínas"},{"nome":"Batata frita","categoria":"Carnes e proteínas"},{"nome":"Detergente","categoria":"Limpeza da casa"},{"nome":"Esponja de louças","categoria":"Limpeza da casa"},{"nome":"Pedra sanitária","categoria":"Limpeza da casa"},{"nome":"Água sanitária","categoria":"Limpeza da casa"},{"nome":"Multiuso","categoria":"Limpeza da casa"},{"nome":"Desinfetante","categoria":"Limpeza da casa"},{"nome":"Creme dental","categoria":"Higiene pessoal"},{"nome":"Escova dental","categoria":"Higiene pessoal"},{"nome":"Enxaguante bucal","categoria":"Higiene pessoal"},{"nome":"Desodorante","categoria":"Higiene pessoal"},{"nome":"Shampoo","categoria":"Higiene pessoal"},{"nome":"Condicionador","categoria":"Higiene pessoal"},{"nome":"Sabonete","categoria":"Higiene pessoal"},{"nome":"Lâmina de barbear","categoria":"Higiene pessoal"}]};
 const { validarEdicaoProduto, validarCategoria } = M_produtos;
-const { driveConfigurado, conectar: conectarDrive, sincronizar } = M_drive;
+const { driveConfigurado, conectar: conectarDrive, sincronizar, garantirConexao } = M_drive;
 const { NOME_EU, VERSAO_APP } = M_config;
 const { validarProduto, encontrarSimilares, agruparPorCategoria, formatarData, formatarMoeda } = M_logica;
 const { aplicarCorrecao } = M_correcao;
@@ -1963,6 +1986,7 @@ function telaRevisarCompra() {
       await carregarDados();
       estado.revisando = false;
       mostrarStatus('Compra finalizada e salva no histórico');
+      sincronizarAutomatico();
       telaCompra();
     } catch (err) {
       mostrarStatus('Erro ao finalizar a compra. Nada foi perdido: tente novamente.', true);
@@ -2548,6 +2572,7 @@ function telaConfig() {
   document.getElementById('drive-conectar')?.addEventListener('click', async () => {
     try {
       await conectarDrive();
+      localStorage.setItem('driveAutorizado', '1');
       mostrarStatus('Conectado ao Google Drive');
     } catch (err) {
       mostrarStatus(err.message, true);
@@ -2557,13 +2582,9 @@ function telaConfig() {
   document.getElementById('drive-sync')?.addEventListener('click', async () => {
     try {
       mostrarStatus('Sincronizando...');
-      const dono = donoDesteCelular();
-      const outro = dono === 'eu' ? 'viviane' : 'eu';
-      const { dados, conflitos } = await sincronizar(dadosAtuais(), dono, outro);
-      await banco.gravarLotes(dados);
-      await carregarDados();
-      localStorage.setItem('ultimaSync', new Date().toISOString());
-      const n = Object.values(conflitos).flat().length;
+      await garantirConexao().catch(() => conectarDrive());
+      localStorage.setItem('driveAutorizado', '1');
+      const n = await executarSincronizacao();
       mostrarStatus(`Sincronizado${n ? ` (${n} conflito(s): ficou a alteração mais recente)` : ''}`);
       telaConfig();
     } catch (err) {
@@ -2689,6 +2710,30 @@ document.addEventListener('touchend', (e) => {
 }, { passive: true });
 
 
+/** Sincroniza com o Drive e devolve a quantidade de conflitos resolvidos. */
+async function executarSincronizacao() {
+  const dono = donoDesteCelular();
+  const outro = dono === 'eu' ? 'viviane' : 'eu';
+  const { dados, conflitos } = await sincronizar(dadosAtuais(), dono, outro);
+  await banco.gravarLotes(dados);
+  await carregarDados();
+  localStorage.setItem('ultimaSync', new Date().toISOString());
+  return Object.values(conflitos).flat().length;
+}
+
+/** Sincroniza sozinho ao abrir o app e depois de finalizar uma compra, se o Drive já foi autorizado. */
+async function sincronizarAutomatico() {
+  if (!driveConfigurado() || localStorage.getItem('driveAutorizado') !== '1') return;
+  try {
+    await garantirConexao();
+    await executarSincronizacao();
+    if (estado.telaAtual === 'config') telaConfig();
+  } catch (err) {
+    console.warn('Sincronização automática não concluída:', err);
+    mostrarStatus('Não sincronizou sozinho. Toque em "Sincronizar agora" em Config.', true);
+  }
+}
+
 async function iniciar() {
   try {
     const rotuloVersao = document.getElementById('versao-app');
@@ -2697,6 +2742,7 @@ async function iniciar() {
     await garantirCadastroInicial();
     mostrarStatus('Salvo neste celular');
     irPara('inicio');
+    sincronizarAutomatico();
   } catch (err) {
     mostrarStatus('Não foi possível abrir o banco de dados deste navegador.', true);
     console.error(err);
