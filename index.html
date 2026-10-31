@@ -132,6 +132,16 @@ label { display: block; font-size: 0.9rem; margin: 10px 0 4px; }
 }
 .navegacao button.ativa { background: var(--rosa); font-weight: 600; }
 
+/* Lista de compra: quadrinho + nome + quantidade, preço aparece quando o item está marcado. */
+.item-compra { padding: 10px 0; border-bottom: 1px solid var(--borda); }
+.item-compra:last-child { border-bottom: none; }
+.linha-compra { display: flex; align-items: center; gap: 10px; margin: 4px 0; }
+.linha-compra input[type="checkbox"] { width: 24px; height: 24px; flex: 0 0 auto; }
+.linha-compra .nome { flex: 1; }
+.linha-compra input[type="number"] { width: 72px; flex: 0 0 auto; }
+.linha-compra input[type="text"] { flex: 1; }
+.ultimo-preco { font-size: .8rem; color: #666; margin: 2px 0 0; }
+
 </style>
 </head>
 <body>
@@ -169,7 +179,7 @@ const NOME_EU = 'Leonardo';
 
 // Versão do app. Melhorias pequenas: 1.2, 1.3... Mudanças grandes: 2.0, 3.0...
 // Histórico completo em CHANGELOG.md.
-const VERSAO_APP = '1.10';
+const VERSAO_APP = '2.0';
 
 return { GOOGLE_CLIENT_ID, NOME_PASTA_DRIVE, ESCOPO_DRIVE, NOME_EU, VERSAO_APP };
 })();
@@ -691,6 +701,77 @@ function temPendencia(dados, ultimoEnvioIso) {
 return { COLECOES_SYNC, mesclarColecao, mesclarDados, temPendencia };
 })();
 
+const M_duplicados = (() => {
+// Une categorias e produtos com o mesmo nome. Duplicados aparecem quando dois celulares criam o cadastro
+// inicial separadamente. Em cada grupo fica o registro de menor id, então todos os celulares escolhem o mesmo.
+
+const { normalizarNome } = M_logica;
+
+/** Id determinístico para o cadastro inicial: o mesmo nome gera o mesmo id em qualquer celular. */
+function idDeNome(prefixo, nome) {
+  return `${prefixo}-${normalizarNome(nome).replace(/\s+/g, '-')}`;
+}
+
+function escolherUm(registros, chave, trocas) {
+  const grupos = new Map();
+  for (const r of registros) {
+    const k = chave(r);
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(r);
+  }
+  const resultado = [];
+  for (const grupo of grupos.values()) {
+    grupo.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const [manter, ...sobras] = grupo;
+    resultado.push(manter);
+    for (const s of sobras) trocas.set(s.id, manter.id);
+  }
+  return resultado;
+}
+
+/**
+ * Remove duplicados por nome e atualiza as referências em produtos, listas e compras.
+ * Devolve os dados limpos e quantos registros foram unidos. Se não houver duplicados, nada muda.
+ */
+function unificarDuplicados(dados) {
+  const categoriasOriginais = dados.categorias ?? [];
+  const produtosOriginais = dados.produtos ?? [];
+
+  const trocaCategoria = new Map();
+  const categorias = escolherUm(categoriasOriginais, (c) => normalizarNome(c.nome), trocaCategoria);
+
+  const trocaProduto = new Map();
+  const produtos = escolherUm(produtosOriginais, (p) => normalizarNome(p.nome), trocaProduto).map((p) => ({
+    ...p,
+    categoriaId: trocaCategoria.get(p.categoriaId) ?? p.categoriaId,
+  }));
+
+  const listas = (dados.listas ?? []).map((l) => {
+    const vistos = new Set();
+    const itens = [];
+    for (const i of l.itens ?? []) {
+      const produtoId = trocaProduto.get(i.produtoId) ?? i.produtoId;
+      if (vistos.has(produtoId)) continue;
+      vistos.add(produtoId);
+      itens.push({ ...i, produtoId });
+    }
+    return { ...l, itens };
+  });
+
+  const compras = (dados.compras ?? []).map((c) => ({
+    ...c,
+    itens: (c.itens ?? []).map((i) => ({ ...i, produtoId: trocaProduto.get(i.produtoId) ?? i.produtoId })),
+  }));
+
+  const removidos =
+    categoriasOriginais.length - categorias.length + (produtosOriginais.length - produtos.length);
+
+  return { dados: { ...dados, categorias, produtos, listas, compras }, removidos };
+}
+
+return { idDeNome, unificarDuplicados };
+})();
+
 const M_graficos = (() => {
 // Gráficos em SVG (rosca e linha), gerados como texto. Funções puras, testáveis no computador.
 
@@ -1038,6 +1119,7 @@ const M_drive = (() => {
 
 const { GOOGLE_CLIENT_ID, NOME_PASTA_DRIVE, ESCOPO_DRIVE } = M_config;
 const { mesclarDados } = M_sincronizacao;
+const { unificarDuplicados } = M_duplicados;
 
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
@@ -1163,7 +1245,9 @@ async function sincronizar(dadosLocais, donoDesteCelular, nomeOutro) {
   const pasta = await acharOuCriarPasta();
   const idOutro = await acharArquivo(pasta, `compras-${nomeOutro}.json`);
   const remoto = idOutro ? (await lerArquivo(idOutro)).dados ?? {} : {};
-  const { dados, conflitos } = mesclarDados(dadosLocais, remoto);
+  const mesclados = mesclarDados(dadosLocais, remoto);
+  const { dados } = unificarDuplicados(mesclados.dados);
+  const conflitos = mesclados.conflitos;
   await gravarArquivo(pasta, `compras-${donoDesteCelular}.json`, {
     formato: 'compras-da-casa-sync',
     versao: 1,
@@ -1184,6 +1268,7 @@ const seed = {"versao_cadastro":1,"observacao":"Lista inicial enviada pelo usuá
 const { validarEdicaoProduto, validarCategoria } = M_produtos;
 const { driveConfigurado, conectar: conectarDrive, sincronizar, garantirConexao } = M_drive;
 const { NOME_EU, VERSAO_APP } = M_config;
+const { unificarDuplicados, idDeNome } = M_duplicados;
 const { validarProduto, encontrarSimilares, agruparPorCategoria, formatarData, formatarMoeda } = M_logica;
 const { aplicarCorrecao } = M_correcao;
 const { roscaSvg, linhaSvg, corDaFatia } = M_graficos;
@@ -1244,13 +1329,13 @@ async function garantirCadastroInicial() {
   if (estado.produtos.length > 0 || estado.categorias.length > 0) return;
   const idPorNome = new Map();
   for (const nome of seed.categorias) {
-    const cat = { id: novoId('cat'), nome };
+    const cat = { id: idDeNome('cat', nome), nome };
     idPorNome.set(nome, cat.id);
     await banco.categorias.salvar(cat);
   }
   for (const p of seed.produtos) {
     await banco.produtos.salvar({
-      id: novoId('prod'),
+      id: idDeNome('prod', p.nome),
       nome: p.nome,
       categoriaId: idPorNome.get(p.categoria),
       ativo: true,
@@ -1665,6 +1750,7 @@ function telaPreparar() {
 }
 
 // ---------- Tela: Compra em andamento ----------
+// Nomes das situações para o histórico e a correção. "Não encontrado" só existe em compras antigas.
 const ROTULO_STATUS = {
   [STATUS_ITEM.PENDENTE]: 'Pendente',
   [STATUS_ITEM.COMPRADO]: 'Comprado',
@@ -1752,7 +1838,15 @@ function telaIniciarCompra() {
   });
 }
 
+/** Categoria do item (pelo produto cadastrado), usada para agrupar a lista de compra. */
+function categoriaDoItem(item) {
+  const produto = estado.produtos.find((p) => p.id === item.produtoId);
+  const categoria = estado.categorias.find((c) => c.id === produto?.categoriaId);
+  return categoria?.nome ?? 'Outros';
+}
+
 function cartaoItem(item, idx) {
+  const marcado = item.status === STATUS_ITEM.COMPRADO;
   const ultimo = ultimoPrecoPago(item.produtoId, estado.compras);
   const textoUltimo = ultimo
     ? `Último preço: ${formatarMoeda(ultimo.precoUnitario)} em ${formatarData(ultimo.data)}${
@@ -1761,30 +1855,21 @@ function cartaoItem(item, idx) {
     : 'Sem compra anterior';
   const precoTexto = item.precoUnitario == null ? '' : String(item.precoUnitario).replace('.', ',');
   return `
-    <div class="cartao" data-idx="${idx}">
-      <div class="linha" style="justify-content:space-between">
-        <strong>${escapar(item.nomeProduto)}</strong>
-        <span style="font-size:.85rem">${item.planejada != null ? `Planejado: ${item.planejada}` : 'Extra'}</span>
+    <div class="item-compra" data-idx="${idx}">
+      <div class="linha-compra">
+        <input type="checkbox" data-campo="marcado" ${marcado ? 'checked' : ''} aria-label="Comprado: ${escapar(item.nomeProduto)}">
+        <span class="nome">${escapar(item.nomeProduto)}</span>
+        <input type="number" min="1" step="1" inputmode="numeric" data-campo="quantidade" value="${item.quantidade ?? 1}" aria-label="Quantidade de ${escapar(item.nomeProduto)}">
       </div>
-      <p style="font-size:.85rem;color:#555;margin:6px 0">${textoUltimo}</p>
-      <div class="linha">
-        <div>
-          <label>Quantidade</label>
-          <input type="number" min="1" step="1" inputmode="numeric" data-campo="quantidade" value="${item.quantidade ?? ''}">
-        </div>
-        <div>
-          <label>Preço unitário (R$)</label>
-          <input type="text" inputmode="decimal" data-campo="preco" value="${precoTexto}" placeholder="0,00">
-        </div>
-      </div>
-      <div class="linha" style="margin-top:8px">
-        <select data-campo="status" aria-label="Situação do item">
-          ${Object.entries(ROTULO_STATUS)
-            .map(([valor, rotulo]) => `<option value="${valor}" ${item.status === valor ? 'selected' : ''}>${rotulo}</option>`)
-            .join('')}
-        </select>
-        <strong>Subtotal: ${formatarMoeda(subtotalItem(item))}</strong>
-      </div>
+      ${
+        marcado
+          ? `<div class="linha-compra">
+              <input type="text" inputmode="decimal" data-campo="preco" value="${precoTexto}" placeholder="Preço unitário, ex.: 1050 = 10,50" aria-label="Preço de ${escapar(item.nomeProduto)}">
+              <strong>${formatarMoeda(subtotalItem(item))}</strong>
+            </div>`
+          : ''
+      }
+      <p class="ultimo-preco">${textoUltimo}</p>
     </div>`;
 }
 
@@ -1795,6 +1880,20 @@ function telaEmAndamento() {
   const disponiveis = estado.produtos
     .filter((p) => p.ativo && !naCompra.has(p.id))
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  // Agrupa por categoria (ordem alfabética) e, dentro de cada categoria, por nome do item.
+  const grupos = new Map();
+  compra.itens.forEach((item, idx) => {
+    const categoria = categoriaDoItem(item);
+    if (!grupos.has(categoria)) grupos.set(categoria, []);
+    grupos.get(categoria).push({ item, idx });
+  });
+  const ordenados = [...grupos.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
+    .map(([categoria, itens]) => ({
+      categoria,
+      itens: itens.sort((x, y) => x.item.nomeProduto.localeCompare(y.item.nomeProduto, 'pt-BR')),
+    }));
 
   tela.innerHTML = `
     <div class="cartao">
@@ -1808,7 +1907,15 @@ function telaEmAndamento() {
     </div>
 
     ${compra.itens.length === 0 ? '<p class="vazio">Nenhum item. Adicione produtos abaixo.</p>' : ''}
-    ${compra.itens.map((item, idx) => cartaoItem(item, idx)).join('')}
+    ${ordenados
+      .map(
+        (g) => `
+      <div class="cartao">
+        <h2 style="margin-top:0">${escapar(g.categoria)}</h2>
+        ${g.itens.map(({ item, idx }) => cartaoItem(item, idx)).join('')}
+      </div>`,
+      )
+      .join('')}
 
     <div class="cartao">
       <label for="buscar-avulso">Adicionar produto que não estava na lista</label>
@@ -1837,11 +1944,17 @@ function telaEmAndamento() {
     const idx = Number(cartao.dataset.idx);
     const item = compra.itens[idx];
 
+    cartao.querySelector('[data-campo="marcado"]').addEventListener('change', async (e) => {
+      item.status = e.target.checked ? STATUS_ITEM.COMPRADO : STATUS_ITEM.NAO_COMPRADO;
+      await salvarCompraAtual();
+      telaEmAndamento();
+    });
+
     cartao.querySelector('[data-campo="quantidade"]').addEventListener('change', async (e) => {
       const valor = Number(e.target.value);
       if (!Number.isInteger(valor) || valor < 1) {
         mostrarStatus('A quantidade deve ser um número inteiro de pelo menos 1.', true);
-        e.target.value = item.quantidade ?? '';
+        e.target.value = item.quantidade ?? 1;
         return;
       }
       item.quantidade = valor;
@@ -1849,8 +1962,11 @@ function telaEmAndamento() {
       telaEmAndamento();
     });
 
-    // Máscara de centavos: digitando 1050 aparece 10,50 (os dois últimos dígitos são centavos).
-    cartao.querySelector('[data-campo="preco"]').addEventListener('input', (e) => {
+    const campoPreco = cartao.querySelector('[data-campo="preco"]');
+    if (!campoPreco) return;
+
+    // Máscara de centavos: digitando 1050 aparece 10,50.
+    campoPreco.addEventListener('input', (e) => {
       const digitos = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 9);
       if (digitos === '') {
         e.target.value = '';
@@ -1861,7 +1977,7 @@ function telaEmAndamento() {
       e.target.value = `${reais},${centavos}`;
     });
 
-    cartao.querySelector('[data-campo="preco"]').addEventListener('change', async (e) => {
+    campoPreco.addEventListener('change', async (e) => {
       const texto = e.target.value.trim();
       if (texto === '') {
         item.precoUnitario = null;
@@ -1874,18 +1990,6 @@ function telaEmAndamento() {
         }
         item.precoUnitario = Math.round(valor * 100) / 100;
       }
-      await salvarCompraAtual();
-      telaEmAndamento();
-    });
-
-    cartao.querySelector('[data-campo="status"]').addEventListener('change', async (e) => {
-      const novo = e.target.value;
-      if (novo === STATUS_ITEM.COMPRADO && item.precoUnitario == null) {
-        mostrarStatus('Informe o preço antes de marcar o item como comprado.', true);
-        e.target.value = item.status;
-        return;
-      }
-      item.status = novo;
       await salvarCompraAtual();
       telaEmAndamento();
     });
@@ -1907,7 +2011,7 @@ function telaEmAndamento() {
       produtoId,
       nomeProduto: produto.nome,
       planejada: null,
-      status: STATUS_ITEM.PENDENTE,
+      status: STATUS_ITEM.COMPRADO,
       quantidade: 1,
       precoUnitario: null,
     });
@@ -2725,7 +2829,7 @@ async function executarSincronizacao() {
   const dono = donoDesteCelular();
   const outro = dono === 'eu' ? 'viviane' : 'eu';
   const { dados, conflitos } = await sincronizar(dadosAtuais(), dono, outro);
-  await banco.gravarLotes(dados);
+  await banco.gravarLotes(dados, { substituir: true });
   await carregarDados();
   localStorage.setItem('ultimaSync', new Date().toISOString());
   return Object.values(conflitos).flat().length;
@@ -2750,6 +2854,16 @@ async function iniciar() {
     if (rotuloVersao) rotuloVersao.textContent = `v${VERSAO_APP}`;
     await carregarDados();
     await garantirCadastroInicial();
+    const limpeza = unificarDuplicados({
+      categorias: estado.categorias,
+      produtos: estado.produtos,
+      listas: estado.listas,
+      compras: estado.compras,
+    });
+    if (limpeza.removidos > 0) {
+      await banco.gravarLotes(limpeza.dados, { substituir: true });
+      await carregarDados();
+    }
     mostrarStatus('Salvo neste celular');
     irPara('inicio');
     sincronizarAutomatico();
